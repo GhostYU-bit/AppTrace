@@ -148,6 +148,25 @@ public enum EvidenceType
 
     /// <summary>The path is a Windows-managed or AppTrace-protected location.</summary>
     SystemManagedPath,
+
+    /// <summary>
+    /// Ownership was established at an ancestor directory and this location is
+    /// inside it. Task 06: evidence about a location that does not come from the
+    /// location's own name, which is what lets an application tree be attributed
+    /// through children named for their content rather than for the product.
+    /// </summary>
+    InheritedFromOwner,
+
+    /// <summary>
+    /// A directory entry names an installed application as its subject: the location
+    /// is <em>about</em> that application without belonging to it. Task 06.
+    /// </summary>
+    /// <remarks>
+    /// This record lives only in <c>CandidateOwner.RelationshipEvidence</c> and is
+    /// never scored, so a subject name found inside an owned tree cannot add its way
+    /// to ownership of that tree.
+    /// </remarks>
+    SubjectNameMatch,
 }
 
 /// <summary>How much a single piece of evidence should move the confidence score.</summary>

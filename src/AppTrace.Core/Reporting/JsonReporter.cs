@@ -106,14 +106,34 @@ public static class JsonReporter
                 {
                     appId = o.AppId,
                     displayName = appNames.TryGetValue(o.AppId, out var n) ? n : o.AppId,
+                    relation = o.Relation.ToString(),
                     classification = o.Classification.ToString(),
                     score = o.Score,
                     accepted = true,
                 }),
+
+                // Applications the content is about, which receive no bytes. Kept in
+                // its own collection so an existing consumer that reads `owners` for
+                // accounting cannot accidentally count these.
+                relatedApplications = item.RelatedApplications.Select(o => new
+                {
+                    appId = o.AppId,
+                    displayName = appNames.TryGetValue(o.AppId, out var n) ? n : o.AppId,
+                    relation = o.Relation.ToString(),
+                    evidence = o.RelationshipEvidence.Select(e => new
+                    {
+                        type = e.Type.ToString(),
+                        description = e.Description,
+                        source = e.Source.ToString(),
+                        specificity = e.Specificity,
+                    }),
+                }),
+
                 candidateOwners = item.CandidateOwners.Select(o => new
                 {
                     appId = o.AppId,
                     displayName = appNames.TryGetValue(o.AppId, out var n) ? n : o.AppId,
+                    relation = o.Relation.ToString(),
                     classification = o.Classification.ToString(),
                     score = o.Score,
                     accepted = o.Accepted,
@@ -125,6 +145,16 @@ public static class JsonReporter
                         source = e.Source.ToString(),
                         supportsAttribution = e.SupportsAttribution,
                         weight = e.Weight,
+                        specificity = e.Specificity,
+                        kind = e.Kind.ToString(),
+                    }),
+                    relationshipEvidence = o.RelationshipEvidence.Select(e => new
+                    {
+                        type = e.Type.ToString(),
+                        description = e.Description,
+                        source = e.Source.ToString(),
+                        specificity = e.Specificity,
+                        kind = e.Kind.ToString(),
                     }),
                 }),
             }),

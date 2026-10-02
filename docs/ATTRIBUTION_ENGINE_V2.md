@@ -910,6 +910,43 @@ the nearest known name.
 
 ## F. Ownership / Relationship Model
 
+> **Implemented in Task 06.** `CandidateRelation`, ownership propagation and
+> conservative `RelatedTo` now exist in production code. See "Task 06 as built" at
+> the end of this document.
+
+### F.1 The distinction
+
+Ownership and relationship are different claims about the same path, and Phase 0
+had only one:
+
+```text
+Ownership answers  who is responsible for the bytes.
+RelatedTo answers  what other application the content concerns.
+```
+
+```text
+NVIDIA app\NvBackend\Recommendations\cities_skylines
+
+  NVIDIA App        OWNS       this path        <- responsible for the bytes
+  Cities: Skylines  RELATED_TO this path        <- the content is about it
+```
+
+Two relations, deliberately no more. A richer vocabulary (`GeneratedFor`,
+`CacheOf`, `DependencyOf`, `UsedBy`, `InstalledBy`, `ProducedBy`, `Contains`)
+would be more expressive, and the evidence cannot yet tell those apart. A relation
+the evidence cannot support is a claim AppTrace must not make.
+
+### F.2 Rules the model enforces
+
+| Rule | Why |
+| --- | --- |
+| Only `Owns` may be accepted, classified, or receive bytes | A subject name inside an owned tree must never become a claim on that tree |
+| `RelationshipEvidence` is never scored | Keeps relatedness from adding its way into an ownership score |
+| `RelatedTo` requires an existing owner | A relationship is *between* two applications; with no owner there is nothing to be related to, so UNKNOWN stays valid |
+| `RelatedTo` is never used to restore a guess | Converting "we cannot tell who owns this" into "this is about X" would trade an honest UNKNOWN for an unsupported claim |
+| `SHARED` and `AMBIGUOUS` keep their meanings | Co-ownership is not subject association. Two owners is `SHARED`; one owner plus an unresolved competitor is `AMBIGUOUS`; one owner plus subject data is `Owns` + `RelatedTo` |
+| Relationship detection requires a subject-data context and at least two words of the product name | One word is never enough. See E.1a on ambiguous vocabulary |
+
 ### F.1 Answer: yes, distinguish — with exactly two relations, not seven
 
 Task 02 suggested `OWNS / RELATED_TO / SHARED_BY / GENERATED_FOR / CACHE_OF /
@@ -1653,3 +1690,111 @@ downgraded, on the corpus and on the real machine. One trade-off was accepted: t
 Steam soundtrack path, previously attributed to `Cities: Skylines` by name, is now
 UNKNOWN, because its naming directory is four levels below the scan root. A single
 recall loss to remove a class of unsupported claims is the trade this task chose.
+
+---
+
+## Task 06 as built — Ownership Propagation & Relationship Model
+
+The pipeline now separates two questions that share a path:
+
+```text
+Path
+ ↓
+Ownership Assertion(s)      who is responsible for the bytes
+ ↓
+Relationship Assertion(s)   what other application the content concerns
+ ↓
+Evidence
+ ↓
+Classification
+ ↓
+WHY
+```
+
+> **Ownership answers who is responsible for the bytes.**
+>
+> **RelatedTo answers what other application the content concerns.**
+>
+> **RelatedTo never receives exclusive bytes.**
+
+### The model
+
+`CandidateRelation` has exactly two members, `Owns` and `RelatedTo`.
+`CandidateOwner` gained `Relation` and a separate `RelationshipEvidence` list, so
+relationship evidence is not merely labelled differently — it is stored apart and
+never reaches the score.
+
+### Ownership propagation
+
+`AttributionInput.OwnedAncestors` carries `(path, appId, classification)` down from
+the scanner, populated whenever a directory's ownership was established with a
+single accepted owner. `CollectInheritedOwnershipEvidence` proposes that owner for
+the child with an `InheritedFromOwner` record at **+18** — deliberately weaker than
+any direct provenance, so `InstallLocationMatch` (+70) and
+`DeclaredInstallLocation` (+95) both outrank it and a decisive contradiction still
+forbids the claim.
+
+Reflecting that in the classification, this is why an ordinary descendant of an
+owned tree lands at MEDIUM rather than HIGH: inheritance alone is not enough for a
+confident claim. The bytes are attributed and the tree is closed correctly; the
+confidence stays honest.
+
+### Boundaries
+
+| Boundary | Where it is enforced |
+| --- | --- |
+| Descendant with its own registration | `DeclaredInstallLocation` (+95) outranks inheritance; the descendant becomes `CONFIRMED` |
+| Shared vendor namespace | `VendorNamespaceOf` withholds inheritance outright |
+| Decisive contradiction | The classification gate in `ClassifyCandidate`, unchanged from Task 04 |
+| Structural descendant (cache, logs, dependency tree, runtime) | **Not** a boundary: Task 05's semantics govern name claims, not byte ownership |
+| Subject store | Not a boundary either: ownership continues, and entries inside may additionally be `RelatedTo` |
+
+### RelatedTo
+
+`AppendRelatedApplications` runs after ownership is decided and requires all of:
+
+1. an accepted owner exists for the directory;
+2. the entry sits inside a subject-data store — `Recommendations`, `Catalog`,
+   `Favorites`, `Wishlist`, `Playlists`, `Recent` — looking *through* anonymous
+   intermediates such as content hashes, because stores routinely insert one
+   (`Recommendations\<hash>\cities_skylines`);
+3. whole-word name match against an installed application;
+4. not a near miss, and past the specificity floor;
+5. **at least two words** of the product's name.
+
+Rule 5 is the one that keeps `node`, `sdk`, `helper`, `tool` and `zip` from becoming
+relationships: each is exactly one word of some installed product's name, and a
+relationship carries no size and no score, so a reader cannot weigh it. Being wrong
+here is worse than saying nothing.
+
+### NVIDIA: the machinery works, the evidence does not yet exist
+
+The corpus fixture for
+`...\NVIDIA Corporation\NVIDIA app\NvBackend\Recommendations\cities_skylines`
+declares `owner: NVIDIA App`, `relation: RelatedTo`, and accepted ancestors of
+`...\NVIDIA Corporation\NVIDIA app`. Two independent gaps keep it unresolved, and
+neither is a model problem:
+
+* **`NVIDIA App 11.0.9.251` normalizes to `nvidia`.** `NormalizeDisplayName` drops
+  `app` and the version, so the directory `NVIDIA app` does not match the product
+  name by whole words, and `nvidia` alone is one word of a one-word name that
+  `IsNameSpecificEnough` will not treat as product identity at that depth.
+* **The fixture has no install location under `AppData`.** The real machine's
+  NVIDIA App entry registers `C:\Program Files\NVIDIA Corporation\Installer2\...`,
+  which cannot anchor an `AppData` tree. On the real machine the ancestor is
+  therefore `UNKNOWN` too.
+
+Task 07's additional provenance sources — App Paths, services, tasks, Run keys,
+shortcuts — are what would establish NVIDIA App ownership of that ancestor. The
+relationship machinery itself is proved by `REL-SUBJECT-DATA-SYNTHETIC`, a generic
+`OwnerApp\Recommendations\Related Product` case with no product-specific rule.
+
+An honest `UNKNOWN` was the alternative, and it is what the real machine reports.
+
+### What is deliberately not here
+
+No `Owns`/`RelatedTo` enrichment beyond the two relations, no orphan detection, no
+Task 07 provenance sources, no signer analysis, no MSIX, no Steam/Epic manifests,
+no runtime monitoring, no product-specific exception, and no graph or rules engine.
+Steam is deliberately **not** special-cased: the soundtrack recall loss from Task 05
+stays a loss, and `RelatedTo` was not used as a loophole to restore it.

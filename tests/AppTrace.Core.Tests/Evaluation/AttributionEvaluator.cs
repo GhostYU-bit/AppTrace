@@ -57,6 +57,33 @@ internal sealed class EvaluationOutcome
     /// <summary>Null when the case carries no relationship expectation.</summary>
     public string? ExpectedRelation { get; init; }
 
+    /// <summary>
+    /// Display name of the application the location's content should be related to.
+    /// </summary>
+    /// <remarks>
+    /// Null when the case expects no relationship. Checked separately from
+    /// <see cref="OwnerMet"/> because relatedness must never satisfy, or be confused
+    /// with, an ownership expectation.
+    /// </remarks>
+    public string? ExpectedRelatedApplication { get; init; }
+
+    /// <summary>
+    /// The applications the engine reported the content to be about.
+    /// </summary>
+    public IReadOnlyList<string> RelatedApplications { get; init; } = [];
+
+    /// <summary>
+    /// True when the expected relationship was reported. A case with no expectation
+    /// is satisfied when no relationship was invented either.
+    /// </summary>
+    public bool RelationshipMet { get; init; } = true;
+
+    /// <summary>Human-readable summary of what was expected, for failure messages.</summary>
+    public string ExpectedRelationSummary
+        => ExpectedRelatedApplication is null
+            ? "no relationship"
+            : $"{ExpectedRelatedApplication} RELATED_TO";
+
     /// <summary>"high" or "medium": how sure the human label is.</summary>
     public string Confidence { get; init; } = "high";
 
@@ -116,6 +143,39 @@ internal sealed class EvaluationOutcome
 internal static class AttributionEvaluator
 {
     /// <summary>
+    /// Turns a case's accepted-ancestor paths into ownership assertions.
+    /// </summary>
+    /// <remarks>
+    /// The corpus names ancestors by path because that is what the scanner knows at
+    /// run time. To reconstruct what the scanner would have carried down, each
+    /// ancestor is matched to the installed application whose own registration
+    /// anchors it. An ancestor no application accounts for contributes no ownership,
+    /// which keeps a fixture from asserting ownership merely by listing a path.
+    /// </remarks>
+    private static List<OwnedAncestor> OwnedAncestors(
+        IReadOnlyList<string> ancestors,
+        IReadOnlyList<CorpusApp> catalogue)
+    {
+        var owned = new List<OwnedAncestor>(ancestors.Count);
+        foreach (var ancestor in ancestors)
+        {
+            var normalized = TextNormalizer.NormalizePath(ancestor);
+            var owner = catalogue.FirstOrDefault(a =>
+                a.InstallLocation is { Length: > 0 } install
+                && TextNormalizer.NormalizePath(install).StartsWith(
+                    normalized + Path.DirectorySeparatorChar,
+                    StringComparison.Ordinal));
+
+            if (owner is not null)
+            {
+                owned.Add(new OwnedAncestor(normalized, owner.Id, Classification.Confirmed));
+            }
+        }
+
+        return owned;
+    }
+
+    /// <summary>
     /// Runs the engine for one path and returns both the summary verdict and the
     /// raw attribution, so a test can assert on candidates that must not exist.
     /// </summary>
@@ -135,7 +195,12 @@ internal static class AttributionEvaluator
             ? parsed
             : LocationCategory.Unknown;
 
-        var delta = Fixtures.Evaluate(path, apps, locationCategory, ancestors);
+        var delta = Fixtures.Evaluate(
+            path,
+            apps,
+            locationCategory,
+            ancestors,
+            OwnedAncestors(ancestors, catalogue));
 
         var accepted = delta.AcceptedOwners
             .Select(o => apps.First(a => a.Id == o.AppId).DisplayName)
@@ -170,6 +235,8 @@ internal static class AttributionEvaluator
         var minimum = Parse(testCase.Desired.MinClassification);
         var allowed = ParseAll(testCase.Desired.AllowedClassifications);
 
+        var related = RelatedApplicationNames(raw, document.Apps);
+
         return new EvaluationOutcome
         {
             Id = testCase.Id,
@@ -181,17 +248,61 @@ internal static class AttributionEvaluator
             ExpectedOwner = testCase.Desired.Owner,
             ExpectedBound = ClassificationComparison.Describe(minimum, allowed),
             ExpectedRelation = testCase.Desired.Relation,
+            ExpectedRelatedApplication = ExpectedRelatedName(testCase, document),
+            RelatedApplications = related,
+            RelationshipMet = RelationshipSatisfied(testCase, document, related),
             OwnerMet = testCase.Desired.Owner is not null
                 && string.Equals(verdict.Owner, testCase.Desired.Owner, StringComparison.Ordinal),
             CorrectlyRefused = testCase.Desired.Owner is null && verdict.AcceptedOwners.Count == 0,
             ClassificationMet = ClassificationComparison.Satisfies(verdict.Classification, minimum, allowed),
-            RelationMet = testCase.Desired.Relation is null,
+            RelationMet = RelationshipSatisfied(testCase, document, related),
             WrongOwnerClaim = testCase.Desired.Owner is null
                 ? verdict.AcceptedOwners.Count > 0
                 : !string.Equals(verdict.Owner, testCase.Desired.Owner, StringComparison.Ordinal),
             BaselineDrift = CompareToBaseline(testCase, verdict),
         };
     }
+
+    /// <summary>
+    /// The application a case expects the content to be related to.
+    /// </summary>
+    /// <remarks>
+    /// A case that declares a <c>relation</c> expects the <em>other</em> application
+    /// to be reported: <c>owner</c> owns the location, <c>relatedApplication</c> is
+    /// what the content is about. When only <c>relation</c> is given, the related
+    /// application is the one named by the case's own expectation note, which the
+    /// corpus records explicitly.
+    /// </remarks>
+    private static string? ExpectedRelatedName(CorpusCase testCase, CorpusDocument document)
+    {
+        if (testCase.Desired.RelatedApplication is { Length: > 0 } explicitName)
+        {
+            return document.Apps.FirstOrDefault(a => a.Id == explicitName)?.DisplayName ?? explicitName;
+        }
+
+        return null;
+    }
+
+    private static bool RelationshipSatisfied(
+        CorpusCase testCase,
+        CorpusDocument document,
+        string[] related)
+    {
+        var expected = ExpectedRelatedName(testCase, document);
+        return expected is null
+            ? related.Length == 0
+            : related.Contains(expected, StringComparer.Ordinal);
+    }
+
+    private static string[] RelatedApplicationNames(
+        LocationAttribution? raw,
+        IReadOnlyList<CorpusApp> catalogue)
+        => raw is null
+            ? []
+            : raw.RelatedApplications
+                .Select(r => catalogue.FirstOrDefault(a => a.Id == r.AppId)?.DisplayName ?? r.AppId)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToArray();
 
     public static EvaluationOutcome Run(EvaluationCase testCase, EvaluationDocument document)
     {

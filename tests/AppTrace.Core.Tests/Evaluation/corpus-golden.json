@@ -1,5 +1,5 @@
 {
-  "comment": "Frozen expectations about which corpus cases the attribution engine does NOT yet satisfy. This is the 'permanent memory' of known attribution defects: the set may only shrink, and a change in either direction must be made deliberately here and explained in the task report. 'wrongOwnerAtHighOrConfirmed' is the number that matters most - how many confident ownership claims are wrong. It must never increase. HISTORY. Task 03: 15 unresolved, 11 of 20 confident claims wrong. Task 04 (evidence kinds and confidence semantics): wrong-owner HIGH/CONFIRMED fell 11 to 0 and confident claims 20 to 4, but the unresolved set stayed at 15 because the false positives were still accepted owners, merely at MEDIUM. Task 05 (path semantics and candidate generation): the seven generic-token false positives are now rejected outright, not downgraded. The unresolved set fell 15 to 3 and desired outcomes met rose 9 to 21. Remaining: two NVIDIA relationship cases, which need the Task 06 relationship model, and the Oxford publisher root, which is a provenance defect rather than a confidence or semantics one. The app literally named Cache was resolved here once structural vocabulary became positional instead of an unconditional blocked name.",
+  "comment": "Frozen expectations about which corpus cases the attribution engine does NOT yet satisfy. This is the 'permanent memory' of known attribution defects: the set may only shrink, and a change in either direction must be made deliberately here and explained in the task report. 'wrongOwnerAtHighOrConfirmed' is the number that matters most - how many confident ownership claims are wrong. HISTORY. Task 03: 15 unresolved, 11 of 20 confident claims wrong. Task 04 (evidence kinds): wrong-owner HIGH/CONFIRMED 11 to 0, confident claims 20 to 4, unresolved still 15. Task 05 (path semantics): seven generic-token false positives refused outright; unresolved 15 to 3, desired met 9 to 21. Task 06 (ownership propagation and relationships): the ownership/relationship model exists, so the two NVIDIA cases are now blocked only by missing owner evidence rather than by a missing model; the generic relationship shape is proved by REL-SUBJECT-DATA-SYNTHETIC. Remaining: two NVIDIA cases that need Task 07 provenance to establish NVIDIA App ownership of the ancestor, and the Oxford publisher root, a provenance defect.",
   "unresolvedCases": [
     "REL-NVIDIA-GAME-RECOMMENDATION",
     "REL-NVIDIA-ILLUSTRATOR-RECOMMENDATION",
@@ -7,5 +7,5 @@
   ],
   "wrongOwnerAtHighOrConfirmed": 0,
   "highOrConfirmedClaims": 4,
-  "totalCases": 24
+  "totalCases": 26
 }

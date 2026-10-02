@@ -63,8 +63,20 @@ public static class EvidenceClassification
         EvidenceType.PublisherMatch => EvidenceKind.Structure,
 
         // ---- Relationship: owned by X, or merely about X? ----------------------
-        // No detector emits these yet; the Owns/RelatedTo model arrives later.
+        // A subject-name match says the location is *about* an application. It is
+        // never ownership evidence and is never scored, which is what keeps
+        // "NVIDIA App owns this, Cities: Skylines is its subject" from decaying into
+        // "Cities: Skylines owns this".
         EvidenceType.UnknownApplication => EvidenceKind.Relationship,
+        EvidenceType.SubjectNameMatch => EvidenceKind.Relationship,
+
+        // InheritedFromOwner is a statement about scope rather than about identity:
+        // an ancestor is owned, so this directory is inside that ownership. It is
+        // classified as Provenance because it originates outside the directory's own
+        // name, and it is emitted at Weak strength so independent evidence at the
+        // directory can outrank it and a decisive contradiction can still forbid the
+        // claim.
+        EvidenceType.InheritedFromOwner => EvidenceKind.Provenance,
 
         // ---- Contradiction: what argues against the claim? --------------------
         EvidenceType.PublisherMismatch => EvidenceKind.Contradiction,

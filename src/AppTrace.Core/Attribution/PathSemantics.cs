@@ -68,6 +68,14 @@ public enum StructureKind
     /// <c>SquirrelTemp</c>.
     /// </summary>
     ApplicationUpdateTree,
+
+    /// <summary>
+    /// A store whose entries <em>refer to</em> other products rather than being
+    /// named after their owner, e.g. <c>Recommendations</c>. A product name found
+    /// directly inside one of these is a subject reference, which is what makes a
+    /// <c>RelatedTo</c> assertion supportable.
+    /// </summary>
+    SubjectData,
 }
 
 /// <summary>
@@ -165,6 +173,20 @@ public static class PathSemantics
         ["updates"] = StructureKind.ApplicationUpdateTree,
         ["updater"] = StructureKind.ApplicationUpdateTree,
         ["squirreltemp"] = StructureKind.ApplicationUpdateTree,
+
+        // Stores whose entries refer to other products. These are where a product
+        // name legitimately means "this content is about that product" rather than
+        // "that product owns this", and they are the only context in which Task 06
+        // will assert a relationship.
+        ["recommendations"] = StructureKind.SubjectData,
+        ["recommendation"] = StructureKind.SubjectData,
+        ["catalog"] = StructureKind.SubjectData,
+        ["catalogue"] = StructureKind.SubjectData,
+        ["favorites"] = StructureKind.SubjectData,
+        ["favourites"] = StructureKind.SubjectData,
+        ["wishlist"] = StructureKind.SubjectData,
+        ["playlists"] = StructureKind.SubjectData,
+        ["recent"] = StructureKind.SubjectData,
     };
 
     /// <summary>
@@ -265,6 +287,38 @@ public static class PathSemantics
     /// </summary>
     public static StructureKind StructureForLeaf(IReadOnlyList<SegmentSemantics> semantics)
         => semantics.Count == 0 ? StructureKind.Unknown : semantics[^1].Kind;
+
+    /// <summary>
+    /// True when the path is a variable-size identifier rather than a name, such as
+    /// a content hash, GUID or an index.
+    /// </summary>
+    /// <remarks>
+    /// Stores commonly place one of these between the store and its entries:
+    /// <c>Recommendations\&lt;hash&gt;\cities_skylines</c>. It carries no meaning of its
+    /// own, so context analysis has to look through it rather than treat it as the
+    /// entry's parent.
+    /// </remarks>
+    public static bool IsAnonymousIntermediary(string? segment)
+    {
+        if (string.IsNullOrWhiteSpace(segment))
+        {
+            return true;
+        }
+
+        var value = segment.Trim();
+
+        // Pure digits, or digits and separators: an index or a version.
+        if (value.Length > 0 && value.All(c => char.IsAsciiDigit(c) || c is '.' or '-' or '_'))
+        {
+            return true;
+        }
+
+        // A hex string long enough that a human word is implausible: 32 hex
+        // characters is the shortest common content hash, and GUIDs of 32 hex digits
+        // without dashes are covered too.
+        var hex = value.Replace("-", string.Empty, StringComparison.Ordinal);
+        return hex.Length >= 32 && hex.All(Uri.IsHexDigit);
+    }
 
     private static StructureKind KindOf(string segment)
         => Anchors.TryGetValue(segment, out var kind) ? kind : StructureKind.Unknown;

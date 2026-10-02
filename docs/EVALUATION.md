@@ -168,15 +168,16 @@ high-confidence human judgement.
 
 ## Current baseline
 
-Measured after Task 05 (Filesystem Semantics & Candidate Generation V2).
+Measured after Task 06 (Ownership Propagation & Relationship Model).
 
 ```text
 Corpus
-  total cases                           24
-  desired outcome met                   21
+  total cases                           26   (24 + 2 synthetic relationship cases)
+  desired outcome met                   23
   wrong-owner HIGH/CONFIRMED claims      0 of 4 confident claims
-  unsupported ownership claims           1   (down from 9)
-  correct UNKNOWN / refusals            11   (up from 3)
+  unsupported ownership claims           1   (the Oxford publisher root)
+  correct UNKNOWN / refusals            12
+  relationship expectations met          2 of 2
 
 Real machine (hand-labelled)
   total cases                           34   (29 reviewed, 5 need review)
@@ -190,38 +191,43 @@ Real machine (hand-labelled)
 
 History, so the trend is visible:
 
-| | Task 03 | Task 04 | Task 05 |
-| --- | --- | --- | --- |
-| Corpus: desired met | 9 | 9 | **21** |
-| Corpus: wrong-owner HIGH/CONFIRMED | 11 of 20 | 0 of 4 | 0 of 4 |
-| Corpus: unsupported claims | 9 | 9 | **1** |
-| Real machine: wrong-owner HIGH/CONFIRMED | 2 of 22 | 1 of 15 | 1 of 15 |
-| Real machine: unsupported claims | 2 | 2 | **1** |
+| | Task 03 | Task 04 | Task 05 | Task 06 |
+| --- | --- | --- | --- | --- |
+| Corpus: desired met | 9 | 9 | 21 | **23 of 26** |
+| Corpus: wrong-owner HIGH/CONFIRMED | 11 of 20 | 0 of 4 | 0 of 4 | 0 of 4 |
+| Corpus: unsupported claims | 9 | 9 | 1 | **1** |
+| Real machine: wrong-owner HIGH/CONFIRMED | 2 of 22 | 1 of 15 | 1 of 15 | 1 of 15 |
+| Real machine: unsupported claims | 2 | 2 | 1 | **1** |
 
-Three things are worth understanding before reading those as a score:
+Task 06 changes no ownership answer on either set. That is the intended result: it
+adds a *second* kind of claim alongside ownership rather than re-deciding the first.
+The two corpus cases it resolves are the synthetic relationship pair it introduces.
 
-* **Task 04 lowered confidence; Task 05 removed candidates.** That is the intended
-  division of labour. After Task 04 the seven generic-token false positives were
-  still accepted owners, merely at MEDIUM. After Task 05 they are refused outright,
-  which is why "desired outcome met" jumps while "wrong-owner HIGH/CONFIRMED" does
-  not move — the latter was already fixed.
+Four things are worth understanding before reading those as a score:
+
+* **The corpus grew by two cases.** `REL-SUBJECT-DATA-SYNTHETIC` (a generic
+  `OwnerApp\Recommendations\Related Product` shape, proving `Owns` + `RelatedTo`
+  with no product-specific rule) and `REL-NO-OWNER-NO-RELATION` (proving no
+  relationship is invented where nothing owns the path). Percentages before and
+  after Task 06 are therefore over different denominators.
+* **The two real NVIDIA cases remain unresolved, and not because the model is
+  missing.** The corpus fixture lacks any evidence that NVIDIA App owns the
+  ancestor: `NVIDIA App 11.0.9.251` normalizes to `nvidia`, which is one word of a
+  one-word name and is not treated as product identity at that depth; and its only
+  registered install location is under `Program Files`. The real machine agrees —
+  that ancestor is `UNKNOWN` there too. Task 07 provenance is what would close it.
+* **No relationship is reported on the real machine, and that is correct.** The
+  scan finds only two subject-store directories (`Recommendations`) and neither has
+  an accepted owner, so there is nothing for a related application to be relative
+  to. Reporting one anyway would be exactly the fabricated claim §10 forbids.
 * **The one remaining unsupported claim** is
   `C:\Program Files (x86)\Oxford University Press`, CONFIRMED because the product
   registers that publisher-level directory as its install location. It is a
-  *provenance* defect, not a confidence or semantics one, so it needs Task 07's
-  additional sources or a dedicated rule.
-* **One correct owner was traded away.** The Steam soundtrack path under
-  `steamapps\common\Cities_Skylines` was previously attributed by name to
-  `Cities: Skylines`. Its naming directory is four levels below the scan root, so
-  Task 05 no longer treats that name as product identity. This is the deliberate
-  direction of the change: fewer unsupported ownership claims in exchange for some
-  recall.
+  *provenance* defect, not a confidence, semantics or relationship one.
 
-A measurement defect was also fixed during Task 05. `Met` required `OwnerMet`, so a
-*correct refusal* could never be reported as met; and `WrongOwner` did not require
-that an owner had been named, so a case with no accepted owner was counted as both a
-wrong owner and a false negative. Both are corrected, and the evaluator's
-completeness assertion now balances in both halves of the set.
+`RelatedTo` never affects `ExclusiveSizeBytes`. The accounting invariant
+`sum(ExclusiveSizeBytes) == TotalMeasuredBytes` is asserted as before, and the
+end-to-end check on a real scan passes.
 
 ---
 
@@ -230,8 +236,35 @@ completeness assertion now balances in both halves of the set.
 * It does not change attribution behaviour. During Task 03 the production code was
   not modified at all.
 * It does not snapshot whole scans or maintain a golden output file per run.
-* It does not score relation expectations yet: the V2 relationship model does not
-  exist, so cases that ask for one are reported as unresolved rather than failed.
 * It does not treat filesystem-measurement completeness (inaccessible files,
   skipped reparse points, lower-bound sizes) as attribution evidence. Those belong
   to measurement quality and are deliberately not part of any attribution score.
+
+## Relationship expectations
+
+A case that expects `RelatedTo` names both the relation and the other application:
+
+```json
+"desired": {
+  "owner": "Owner App",
+  "minClassification": "Medium",
+  "relation": "RelatedTo",
+  "relatedApplication": "app-relatedproduct"
+}
+```
+
+`owner` owns the location; `relatedApplication` is what the content is about. Both
+are required, because a relation without a named counterparty is not checkable.
+
+The check runs in both directions, which is the part that matters:
+
+* a case that expects a relationship must have it reported;
+* **a case that expects none must have none invented.**
+
+That second half is what keeps the model honest. `REL-NO-OWNER-NO-RELATION` exists
+solely to assert it: with no accepted owner there is nothing for a related
+application to be relative to, so the answer stays `UNKNOWN`.
+
+Note that a related application is never counted in `owners`, never classified, and
+never sized. Relationship expectations are reported separately from owner
+precision, so a relationship can never be mistaken for an attribution.

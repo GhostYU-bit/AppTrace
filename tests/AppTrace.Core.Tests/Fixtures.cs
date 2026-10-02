@@ -43,7 +43,8 @@ internal static class Fixtures
         string path,
         IReadOnlyList<AppIdentity> apps,
         LocationCategory category = LocationCategory.ProgramFiles,
-        IReadOnlyList<string>? acceptedAncestors = null)
+        IReadOnlyList<string>? acceptedAncestors = null,
+        IReadOnlyList<OwnedAncestor>? ownedAncestors = null)
     {
         var engine = new AttributionEngine(apps, new AttributionOptions { MaxExecutableProbes = 0 });
         var normalized = TextNormalizer.NormalizePath(path);
@@ -55,10 +56,39 @@ internal static class Fixtures
             DirectoryName = Path.GetFileName(normalized.TrimEnd(Path.DirectorySeparatorChar)),
             Category = category,
             AcceptedAncestorPaths = acceptedAncestors ?? [],
+            OwnedAncestors = ownedAncestors ?? [],
             NormalizedScanRoot = ScanRootFor(normalized, category),
             Depth = DepthBelowRoot(normalized, category),
         });
     }
+
+    /// <summary>
+    /// Evaluates a path as the child of an ancestor whose ownership is established.
+    /// </summary>
+    /// <remarks>
+    /// This is what the scanner does for real: it carries an ownership assertion
+    /// down so descendants do not each have to rediscover the same owner from their
+    /// own names.
+    /// </remarks>
+    public static LocationAttribution EvaluateDescendant(
+        string path,
+        IReadOnlyList<AppIdentity> apps,
+        string ownedAncestorPath,
+        string ownedAncestorAppId,
+        LocationCategory category = LocationCategory.LocalAppData,
+        Classification ancestorClassification = Classification.Confirmed)
+        => Evaluate(
+            path,
+            apps,
+            category,
+            acceptedAncestors: [ownedAncestorPath],
+            ownedAncestors:
+            [
+                new OwnedAncestor(
+                    TextNormalizer.NormalizePath(ownedAncestorPath),
+                    ownedAncestorAppId,
+                    ancestorClassification),
+            ]);
 
     /// <summary>
     /// The deepest well-known root this test path sits under, mirroring how the

@@ -43,8 +43,9 @@ The current emphasis is **attribution and explainability, not cleanup.**
 
 **Experimental / early development.** This is the first public development
 baseline. Attribution Engine V2 is **not complete**: the evidence model and
-confidence semantics from Task 04 are in, but the filesystem semantic layer,
-additional provenance sources and the ownership/relationship model are not.
+confidence semantics, the filesystem semantic layer, and the ownership/relationship
+model are in, but the additional provenance sources (App Paths, services, scheduled
+tasks, Run keys, shortcuts, signers) are not.
 
 Expect, in particular:
 
@@ -55,9 +56,14 @@ Expect, in particular:
 * **Many `UNKNOWN` results.** AppTrace prefers an honest `UNKNOWN` over a
   confidently wrong attribution, and most directories on a real machine genuinely
   cannot be attributed from static evidence.
-* **Known false positives remain as candidates.** They are no longer *confident*
-  claims, but some are still reported as plausible owners at `MEDIUM` until the
-  semantic layer lands. The regression corpus records them.
+* **Relationships are rare.** `RelatedTo` is reported only when a path something
+  else already owns sits inside a store whose entries refer to other products, and
+  the entry names that product by more than one word. On many machines the answer
+  is genuinely "none".
+* **One known false positive remains.** `Program Files (x86)\Oxford University
+  Press` is `CONFIRMED` because the product registers that publisher-level
+  directory as its install location. Resolving it needs provenance sources that do
+  not exist yet, not a confidence adjustment. The regression corpus records it.
 
 ## Safety — read-only
 
@@ -98,7 +104,7 @@ is opened read-only. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §8.
 ```powershell
 dotnet build AppTrace.sln -c Release
 
-# 140 tests: unit, regression corpus, and the hand-labelled evaluation harness
+# 166 tests: unit, regression corpus, and the hand-labelled evaluation harness
 dotnet test tests/AppTrace.Core.Tests
 ```
 

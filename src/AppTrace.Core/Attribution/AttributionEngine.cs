@@ -19,6 +19,20 @@ public sealed class AttributionInput
     public IReadOnlyList<string> AcceptedAncestorPaths { get; init; } = [];
 
     /// <summary>
+    /// Normalized paths of ancestors whose ownership was <em>established</em>, with
+    /// the application that owns them, outermost first.
+    /// </summary>
+    /// <remarks>
+    /// Ownership established at an ancestor is evidence about its descendants. A
+    /// real application tree is full of child names that have nothing to do with the
+    /// product name — <c>User Data</c>, <c>Default</c>, <c>Cache</c>, <c>logs</c> —
+    /// and requiring each of them to rediscover the same owner independently would
+    /// both lose most of the tree and invite the very name coincidences Task 05
+    /// removed. The ancestor assertion supplies what the child name cannot.
+    /// </remarks>
+    public IReadOnlyList<OwnedAncestor> OwnedAncestors { get; init; } = [];
+
+    /// <summary>
     /// Normalized path of the scan root this directory sits under.
     /// </summary>
     /// <remarks>
@@ -32,6 +46,14 @@ public sealed class AttributionInput
     /// <summary>Depth beneath the scan root; root children are depth 1.</summary>
     public int Depth { get; init; }
 }
+
+/// <summary>
+/// An ancestor directory whose ownership was established, and by which application.
+/// </summary>
+/// <param name="NormalizedPath">Normalized path of the ancestor.</param>
+/// <param name="AppId">The application that owns it.</param>
+/// <param name="Classification">The classification ownership was established at.</param>
+public readonly record struct OwnedAncestor(string NormalizedPath, string AppId, Classification Classification);
 
 /// <summary>The engine's verdict for a single directory.</summary>
 public sealed class LocationAttribution
@@ -49,7 +71,19 @@ public sealed class LocationAttribution
     /// <summary>Human-readable justification for <see cref="OwnershipEstablished"/>.</summary>
     public required string StopReason { get; init; }
 
-    public IReadOnlyList<CandidateOwner> AcceptedOwners => Candidates.Where(c => c.Accepted).ToArray();
+    /// <summary>
+    /// Owners AppTrace stands behind. A <c>RelatedTo</c> candidate is never one of
+    /// them, which is what keeps a subject name from becoming a claim on the bytes.
+    /// </summary>
+    public IReadOnlyList<CandidateOwner> AcceptedOwners
+        => Candidates.Where(c => c.Accepted && c.Owns).ToArray();
+
+    /// <summary>
+    /// Applications this location's content is about, which do not own it and
+    /// receive no bytes.
+    /// </summary>
+    public IReadOnlyList<CandidateOwner> RelatedApplications
+        => Candidates.Where(c => c.Relation == CandidateRelation.RelatedTo).ToArray();
 
     public override string ToString() => $"{Path} [{Classification.Symbol()}] {StopReason}";
 }
@@ -74,6 +108,19 @@ public sealed class LocationAttribution
 public sealed class AttributionEngine
 {
     private const int MinimumUsefulTokenLength = 3;
+
+    /// <summary>
+    /// How many words of a product's name a directory must account for before
+    /// AppTrace will assert that the directory's content is <em>about</em> it.
+    /// </summary>
+    /// <remarks>
+    /// Two, because one word is never enough. A relationship carries no size and no
+    /// score, so a reader cannot weigh it; a wrong "this file is about X" is
+    /// therefore worse than saying nothing, and the measured false positives
+    /// (<c>node</c>, <c>sdk</c>, <c>helper</c>, <c>tool</c>, <c>zip</c>) are all
+    /// exactly one word.
+    /// </remarks>
+    private const int MinimumRelationshipTokens = 2;
 
     /// <summary>
     /// Score at which a single owner may stop the descent.
@@ -195,6 +242,7 @@ public sealed class AttributionEngine
         var evidenceByApp = new Dictionary<string, List<Evidence>>(StringComparer.Ordinal);
 
         CollectDeclaredInstallLocationEvidence(input, evidenceByApp);
+        CollectInheritedOwnershipEvidence(input, evidenceByApp);
         CollectNameEvidence(input, evidenceByApp);
         CollectPublisherEvidence(input, evidenceByApp);
         CollectContextEvidence(input, evidenceByApp);
@@ -205,10 +253,17 @@ public sealed class AttributionEngine
         var (decided, established, reason) = DecideOwnership(candidates);
         var classification = ClassifyLocation(decided);
 
+        // Relatedness is decided only after ownership, because a relationship is a
+        // statement about a location that something else already owns: "this file
+        // belongs to A while being about B". Without an owner there is nothing for B
+        // to be related *to*, and inventing one would trade an honest UNKNOWN for a
+        // claim the evidence does not support.
+        var withRelations = AppendRelatedApplications(input, decided);
+
         return new LocationAttribution
         {
             Path = input.Path,
-            Candidates = decided,
+            Candidates = withRelations,
             Classification = classification,
             OwnershipEstablished = established,
             StopReason = reason,
@@ -467,6 +522,223 @@ public sealed class AttributionEngine
         var semantics = PathSemantics.Analyse(input.NormalizedPath, input.NormalizedScanRoot, input.Depth);
         return !PathSemantics.SuppressesIdentityForLeaf(semantics);
     }
+
+    /// <summary>
+    /// Carries ownership established at an ancestor down to this directory.
+    /// </summary>
+    /// <remarks>
+    /// <para>This is the only detector that may propose an application without any
+    /// evidence drawn from the directory's own name. That is the point: inside an
+    /// established application tree, most child directories are named for what they
+    /// contain (<c>User Data</c>, <c>Default</c>, <c>Cache</c>, <c>NvBackend</c>),
+    /// not for the product, so the ancestor assertion is the only thing that can
+    /// attribute them at all.</para>
+    /// <para><b>It proposes; it does not decide.</b> The inherited record is
+    /// deliberately weak, so independent evidence at this directory can outrank it
+    /// and a decisive contradiction still forbids the claim outright. That is what
+    /// makes a descendant with its own registration a boundary rather than a
+    /// takeover.</para>
+    /// </remarks>
+    private void CollectInheritedOwnershipEvidence(
+        AttributionInput input,
+        Dictionary<string, List<Evidence>> evidenceByApp)
+    {
+        if (input.OwnedAncestors.Count == 0)
+        {
+            return;
+        }
+
+        // Nearest established ancestor wins: it is the tightest statement about
+        // this directory's scope.
+        var ancestor = input.OwnedAncestors[^1];
+        if (!_appsById.TryGetValue(ancestor.AppId, out var app))
+        {
+            return;
+        }
+
+        // A vendor namespace is a boundary. Ownership of a vendor root does not
+        // extend into it, because the products below it are separately owned.
+        if (VendorNamespaceOf(input.DirectoryName) is not null)
+        {
+            return;
+        }
+
+        Add(
+            evidenceByApp,
+            app,
+            EvidenceType.InheritedFromOwner,
+            EvidenceStrength.Weak,
+            EvidenceSource.Derived,
+            $"Ownership of \"{app.DisplayName}\" is established at the ancestor " +
+            $"\"{ancestor.NormalizedPath}\", and this directory is inside it.",
+            true);
+    }
+
+    /// <summary>
+    /// Proposes the applications this location's content is <em>about</em>, without
+    /// letting them own it.
+    /// </summary>
+    /// <remarks>
+    /// <para>Conservative by construction. A relationship requires all of:</para>
+    /// <list type="number">
+    /// <item>an established owner already exists for this directory, so there is
+    /// something for the other application to be related to;</item>
+    /// <item>the directory's parent is a <see cref="StructureKind.SubjectData"/>
+    /// store, so the name in it is an entry rather than a claim;</item>
+    /// <item>the entry names an installed product specifically — the same
+    /// specificity floor that candidate generation uses, and no near miss.</item>
+    /// </list>
+    /// <para>This is why <c>node</c>, <c>sdk</c>, <c>helper</c>, <c>tool</c> and
+    /// <c>zip</c> do not become relationships merely because a matching application
+    /// is installed: they are either not specific enough, or they sit in structures
+    /// that are not subject stores.</para>
+    /// </remarks>
+    private IReadOnlyList<CandidateOwner> AppendRelatedApplications(
+        AttributionInput input,
+        IReadOnlyList<CandidateOwner> decided)
+    {
+        var owners = decided.Where(c => c.Accepted && c.Owns).ToArray();
+        if (owners.Length == 0)
+        {
+            return decided;
+        }
+
+        if (!IsInsideSubjectDataStore(input))
+        {
+            return decided;
+        }
+
+        var directorySegments = NameSegments(input.DirectoryName);
+        var directoryToken = TextNormalizer.Fold(input.DirectoryName);
+        if (directoryToken.Length < MinimumUsefulTokenLength || directorySegments.Count == 0)
+        {
+            return decided;
+        }
+
+        var related = new List<CandidateOwner>();
+        foreach (var app in CandidatesFor(directoryToken, directorySegments))
+        {
+            // The owner of a directory is not "related to" it; it owns it.
+            if (owners.Any(o => string.Equals(o.AppId, app.Id, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            var appSegments = NameSegments(app.NormalizedName);
+            if (appSegments.Count == 0
+                || !IsScopedNameMatch(directorySegments, appSegments)
+                || IsNearMiss(input.DirectoryName, app)
+                || !IsNameSpecificEnough(directorySegments, appSegments))
+            {
+                continue;
+            }
+
+            // Stricter than ownership: a relationship must be named by more than one
+            // word of the product. "helper", "tool", "zip", "sdk" and "node" each
+            // cover exactly one word of some installed product's name, and a single
+            // ambiguous word is not enough to assert that a file is about a
+            // particular application. Being wrong here is worse than saying nothing,
+            // because the reader has no size or score to weigh it against.
+            if (MatchedTokenCount(directorySegments, appSegments) < MinimumRelationshipTokens)
+            {
+                continue;
+            }
+
+            var ownerNames = string.Join(", ", owners.Select(o => o.AppDisplayName ?? o.AppId));
+            related.Add(new CandidateOwner
+            {
+                AppId = app.Id,
+                AppDisplayName = app.DisplayName,
+                Relation = CandidateRelation.RelatedTo,
+                Accepted = false,
+                Classification = Classification.Unknown,
+                Score = 0,
+                RelationshipEvidence =
+                [
+                    new Evidence
+                    {
+                        Type = EvidenceType.SubjectNameMatch,
+                        Description =
+                            $"Directory name \"{input.DirectoryName}\" identifies the installed application " +
+                            $"\"{app.DisplayName}\", and its parent is a store whose entries refer to other products " +
+                            $"rather than to their owner. The location is owned by {ownerNames}.",
+                        Strength = EvidenceStrength.Moderate,
+                        Source = EvidenceSource.Derived,
+                        SupportsAttribution = false,
+                        Weight = 0,
+                        Specificity = CoverageOf(input.DirectoryName, appSegments),
+                    },
+                ],
+            });
+        }
+
+        return related.Count == 0 ? decided : [.. decided, .. related];
+    }
+
+    /// <summary>
+    /// True when the directory sits inside a store whose entries refer to other
+    /// products.
+    /// </summary>
+    /// <remarks>
+    /// Walks up past anonymous intermediates (content hashes, GUIDs, indices) and
+    /// past segments that carry no structural meaning, and returns true when the
+    /// first meaningful ancestor is a subject store. Stores commonly insert one
+    /// there — <c>Recommendations\&lt;hash&gt;\cities_skylines</c> — and stopping at the
+    /// immediate parent would miss exactly the case this exists for.
+    /// </remarks>
+    private static bool IsInsideSubjectDataStore(AttributionInput input)
+    {
+        var segments = input.NormalizedPath
+            .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return false;
+        }
+
+        var scanRootSegments = input.NormalizedScanRoot is { Length: > 0 } root
+            ? root.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries).Length
+            : 0;
+
+        // Walk up from the leaf, ignoring the leaf itself and any anonymous or
+        // structurally meaningless segment. Bounded by the path, so it terminates.
+        for (var start = segments.Length - 1; start > scanRootSegments; start--)
+        {
+            var candidate = string.Join(Path.DirectorySeparatorChar, segments.Take(start));
+            var semantics = PathSemantics.Analyse(
+                candidate,
+                input.NormalizedScanRoot,
+                Math.Max(input.Depth - (segments.Length - start), 0));
+
+            if (semantics.Count == 0)
+            {
+                break;
+            }
+
+            var governing = semantics[^1];
+            if (governing.Kind == StructureKind.SubjectData)
+            {
+                return true;
+            }
+
+            // Stop at the first meaningful segment: it is the entry's real context,
+            // and continuing past it would connect unrelated parts of the tree.
+            if (governing.Kind != StructureKind.Unknown
+                || !PathSemantics.IsAnonymousIntermediary(governing.Segment))
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// How many words of the product's name the directory name accounts for.
+    /// </summary>
+    private static int MatchedTokenCount(
+        IReadOnlyList<string> directorySegments,
+        IReadOnlyList<string> appSegments)
+        => appSegments.Count(segment => directorySegments.Contains(segment));
 
     /// <summary>
     /// The applications whose names can plausibly relate to a directory segment,

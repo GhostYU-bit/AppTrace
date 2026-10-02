@@ -149,19 +149,30 @@ FootprintItem          one accounted filesystem location
 
 CandidateOwner         one claimed relationship
   AppId, AppDisplayName
+  Relation             Owns | RelatedTo
   Evidence[]           belongs to this relationship, not to the location
+  RelationshipEvidence[]  why the content is ABOUT this application; never scored
   Score                internal diagnostic only
   Accepted             is this one of the owners AppTrace stands behind
   Classification       CONFIRMED / HIGH / MEDIUM / LOW
 
 Evidence               one machine-readable reason
-  Type                 EvidenceType (26 members, extensible by adding one)
+  Type                 EvidenceType (extensible by adding one)
+  Kind                 Identity / Provenance / Structure / Relationship / Contradiction
   Description          the specific values that matched
   Strength             Weak / Moderate / Strong / Decisive
   Source               Registry / Filesystem / ExecutableMetadata / PathHeuristic / Derived
   SupportsAttribution  false means this record argues against the claim
   Weight               signed contribution to Score
+  Specificity          how much of a product's name a match accounts for
 ```
+
+**Ownership and relationship are separate claims.** *Ownership answers who is
+responsible for the bytes. RelatedTo answers what other application the content
+concerns.* Only an `Owns` candidate can be accepted, and only an `Owns` candidate
+carries a classification or receives exclusive bytes. `RelatedTo` exists so that a
+file that belongs to one application while being *about* another can be described
+honestly instead of being handed to the wrong owner or left UNKNOWN.
 
 Evidence hangs off the *candidate relationship*, not off the location. The same
 directory yields different evidence for different applications — a folder named
@@ -179,17 +190,26 @@ legitimately has several plausible owners.
 | --- | --- | --- |
 | Declared install location | `DeclaredInstallLocation` (is the location, name agrees) | +95 |
 | Declared install location | `InstallLocationMatch` (inside a declared location) | +70 |
+| Inherited ownership | `InheritedFromOwner` (an ancestor is owned) | +18 |
 | Directory name | `ExactDirectoryNameMatch` / `NormalizedNameMatch` | +40 / +30 |
 | Publisher in path | `KnownPublisherNamespace` | +10 |
 | Shared vendor namespace | `PublisherMatch` / `SharedPublisherDirectory` | +15 / −18 |
-| Context | `KnownApplicationPath` / `ParentDirectoryMatch` / `ChildDirectoryMatch` | +8 / +12 / +10 |
+| Context | `KnownApplicationPath` / `ParentDirectoryMatch` / `ChildDirectoryMatch` | 0 / +12 / +10 |
 | Executable metadata | `ExecutableMetadataMatch` | +40 |
 | Product code | `ProductCodeMatch` | +55 |
 | Registry cross-reference | `RegistryReference` (reserved) | +45 |
 | Bounding | `MultipleCandidateOwners` / `PublisherMismatch` / `ConflictingApplicationMatch` | −15 / −22 / −25 |
+| Relationship (not scored) | `SubjectNameMatch` | 0 |
+
+Detector order matters in one place: `CollectInheritedOwnershipEvidence` runs
+early so an ancestor's ownership is on the table before name evidence, which is what
+lets the two be compared rather than the name silently winning.
 
 Then, in order:
 
+0. **Analyse structure and generate candidates.** Path semantics (Task 05) decides
+   whether a segment's name may propose an owner at all, and the identity indexes
+   decide which applications are compared.
 1. **Score** each candidate as the sum of its evidence weights.
 2. **Classify** each candidate individually (section 6).
 3. **Select** the accepted candidates. All three conditions must hold:
@@ -216,6 +236,53 @@ Then, in order:
 
 The evidence record `StopReason` on every item states which of these applied, so
 the report can explain why a particular directory was or was not closed.
+
+### Ownership propagation, and its boundaries
+
+Ownership established at an ancestor is evidence about its descendants. A real
+application tree is mostly children named for their content — `User Data`,
+`Default`, `Cache`, `logs`, `NvBackend` — so requiring each to rediscover the same
+owner from its own name would lose most of the tree. The scanner therefore carries
+an `OwnedAncestor` assertion down, and `CollectInheritedOwnershipEvidence` proposes
+that owner for the child.
+
+It **proposes rather than decides**, and the record is deliberately weak (+18), so
+four boundaries hold:
+
+| Boundary | Behaviour |
+| --- | --- |
+| A descendant registers itself (`DeclaredInstallLocation`) | The descendant wins outright, `CONFIRMED`; the ancestor does not inherit into it |
+| The child is a shared vendor namespace | Inheritance is withheld; the products below it are separately owned |
+| A decisive contradiction is present | The claim is forbidden however weak or strong the inheritance |
+| The child is a subject store (`Recommendations`, …) | Ownership continues; entries inside it may additionally be `RelatedTo` |
+
+A structural descendant — a cache, a logs directory, a dependency tree — is
+deliberately **not** a boundary. Task 05's semantics decide whether a child's name
+may claim identity; they do not decide whether the parent still owns the bytes.
+`Vivaldi\User Data\Default\Cache` remains Vivaldi's footprint.
+
+### RelatedTo, and why it is conservative
+
+A path owned by A whose content is specifically about installed application B is
+reported as:
+
+```text
+A  Owns       this path
+B  RelatedTo  this path
+```
+
+`AppendRelatedApplications` runs only after ownership is decided, and requires all
+of: an accepted owner exists, the entry sits inside a subject-data store (looking
+through anonymous intermediates such as content hashes), the entry's name matches B
+by whole words, it is not a near miss, it clears the same specificity floor
+candidate generation uses, and it accounts for **at least two words** of B's name.
+One word is never enough: a relationship carries no size and no score, so a reader
+cannot weigh it, and the measured false positives (`node`, `sdk`, `helper`, `tool`,
+`zip`) are each exactly one word.
+
+A `RelatedTo` candidate is never accepted, never classified, never scored, and
+never receives bytes. Its evidence lives in `RelationshipEvidence`, a separate list
+from `Evidence` precisely so it cannot be summed into an ownership claim.
 
 ### Name matching, and why it is strict
 

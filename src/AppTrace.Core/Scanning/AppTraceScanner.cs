@@ -116,6 +116,7 @@ public sealed class AppTraceScanner
             depth: 0,
             parent: null,
             acceptedAncestors: [],
+            ownedAncestors: [],
             isScanRoot: true,
             scanRoot: TextNormalizer.NormalizePath(root.Path));
     }
@@ -157,7 +158,8 @@ public sealed class AppTraceScanner
                 LocationCategory.InstallLocation,
                 depth: 0,
                 parent: null,
-                acceptedAncestors: []);
+                acceptedAncestors: [],
+                ownedAncestors: []);
         }
     }
 
@@ -182,6 +184,7 @@ public sealed class AppTraceScanner
         int depth,
         string? parent,
         IReadOnlyList<string> acceptedAncestors,
+        IReadOnlyList<OwnedAncestor> ownedAncestors,
         bool isScanRoot = false,
         string? scanRoot = null)
     {
@@ -206,6 +209,7 @@ public sealed class AppTraceScanner
                 DirectoryName = directoryName,
                 Category = category,
                 AcceptedAncestorPaths = acceptedAncestors,
+                OwnedAncestors = ownedAncestors,
                 NormalizedScanRoot = scanRoot,
                 Depth = depth,
             });
@@ -245,6 +249,13 @@ public sealed class AppTraceScanner
             ? acceptedAncestors.Concat([path]).ToArray()
             : acceptedAncestors;
 
+        // Ownership established here is evidence about everything below it, so it is
+        // carried down as an assertion rather than left for each child to rediscover
+        // from its own name. Children that own themselves independently outrank it.
+        var childOwnedAncestors = attribution.OwnershipEstablished && accepted.Count == 1
+            ? ownedAncestors.Concat([new OwnedAncestor(normalized, accepted[0].AppId, attribution.Classification)]).ToArray()
+            : ownedAncestors;
+
         long accounted = 0;
         var childCount = 0;
         foreach (var childPath in measurement.ChildDirectories)
@@ -255,7 +266,7 @@ public sealed class AppTraceScanner
             }
 
             childCount++;
-            accounted += ResolveDirectory(childPath, category, depth + 1, path, childAncestors, scanRoot: scanRoot);
+            accounted += ResolveDirectory(childPath, category, depth + 1, path, childAncestors, childOwnedAncestors, scanRoot: scanRoot);
         }
 
         var residual = measurement.SizeBytes - accounted;

@@ -48,6 +48,16 @@ public static class EvidenceWeights
         EvidenceType.ProductCodeMatch => 55,
         EvidenceType.RegistryReference => 45,
 
+        // Inherited ownership is deliberately weak. It is real evidence about the
+        // directory's scope, but it is the only provenance record that does not come
+        // from the directory itself, so it must be able to be outranked by anything
+        // the directory says on its own behalf.
+        EvidenceType.InheritedFromOwner => 18,
+
+        // A subject-name match is never scored. It is listed for completeness so the
+        // zero is explicit rather than accidental.
+        EvidenceType.SubjectNameMatch => 0,
+
         // Identity: strong name identity.
         EvidenceType.ExactDirectoryNameMatch => 40,
         EvidenceType.ExecutableMetadataMatch => 40,

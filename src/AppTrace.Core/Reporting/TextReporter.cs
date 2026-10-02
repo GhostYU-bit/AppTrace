@@ -183,8 +183,24 @@ public static class TextReporter
             }
         }
 
+        var related = item.RelatedApplications;
+        if (related.Count > 0)
+        {
+            // Stated separately from ownership, and never with a size, because a
+            // related application does not receive any of these bytes.
+            sb.AppendLine("      Related application(s) - the content is about these, they do not own it:");
+            foreach (var candidate in related.Take(options.MaxOwnersToExplain))
+            {
+                sb.AppendLine($"        ~ {options.NameOf(candidate.AppId)} (RELATED_TO, no bytes)");
+                foreach (var evidence in candidate.RelationshipEvidence.Take(options.MaxEvidencePerOwner))
+                {
+                    sb.AppendLine($"            [{evidence.Type}] {evidence.Description}");
+                }
+            }
+        }
+
         var otherCandidates = item.CandidateOwners
-            .Where(c => !c.Accepted && c.Supporting.Any())
+            .Where(c => !c.Accepted && c.Owns && c.Supporting.Any())
             .Take(options.MaxOwnersToExplain)
             .ToArray();
         if (otherCandidates.Length > 0)

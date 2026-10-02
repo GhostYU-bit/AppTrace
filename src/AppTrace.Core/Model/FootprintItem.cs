@@ -1,14 +1,51 @@
 namespace AppTrace.Core.Model;
 
 /// <summary>
-/// One claimed ownership relationship between a filesystem location and an
-/// application, together with the evidence for exactly that claim.
+/// How an application relates to a filesystem location.
 /// </summary>
 /// <remarks>
-/// A location may carry several candidates. Evidence is never hoisted to the
+/// <para>Two relations, deliberately no more. The distinction Task 06 exists to
+/// draw is between <em>who is responsible for these bytes</em> and <em>what other
+/// application the content is about</em>:</para>
+/// <list type="bullet">
+/// <item><b>Owns</b> — the application is responsible for this path. Only an
+/// <c>Owns</c> assertion may receive exclusive bytes.</item>
+/// <item><b>RelatedTo</b> — the content of this path concerns that application.
+/// The path stays owned by whoever owns it, and the related application receives no
+/// bytes at all.</item>
+/// </list>
+/// <para>A richer vocabulary (<c>GeneratedFor</c>, <c>CacheOf</c>,
+/// <c>DependencyOf</c>, <c>UsedBy</c>, <c>InstalledBy</c>, <c>ProducedBy</c>,
+/// <c>Contains</c>) would be more expressive and is deliberately not implemented:
+/// nothing in the evidence can reliably tell those apart yet, and a relation the
+/// evidence cannot support is a claim AppTrace must not make.</para>
+/// </remarks>
+public enum CandidateRelation
+{
+    /// <summary>The application is responsible for this path and its bytes.</summary>
+    Owns = 0,
+
+    /// <summary>
+    /// The path's content concerns this application, which does not own it. A
+    /// <c>RelatedTo</c> assertion never receives exclusive bytes.
+    /// </summary>
+    RelatedTo,
+}
+
+/// <summary>
+/// One claimed relationship between a filesystem location and an application,
+/// together with the evidence for exactly that claim.
+/// </summary>
+/// <remarks>
+/// <para>A location may carry several candidates. Evidence is never hoisted to the
 /// location level, because the same evidence rarely supports every candidate
-/// equally: a directory named <c>Acrobat</c> under <c>Adobe</c> is strong
-/// evidence for Acrobat and only namespace evidence for Photoshop.
+/// equally: a directory named <c>Acrobat</c> under <c>Adobe</c> is strong evidence
+/// for Acrobat and only namespace evidence for Photoshop.</para>
+/// <para><b>Relationship evidence is kept strictly apart from ownership
+/// evidence.</b> <see cref="RelationshipEvidence"/> never participates in
+/// <see cref="Score"/>, so a subject name found inside an owned tree cannot add its
+/// way to ownership of that tree. The two are separate lists for exactly that
+/// reason, not for presentation.</para>
 /// </remarks>
 public sealed record CandidateOwner
 {
@@ -17,7 +54,17 @@ public sealed record CandidateOwner
     /// <summary>Denormalized display name, so JSON output stays readable on its own.</summary>
     public string? AppDisplayName { get; init; }
 
+    /// <summary>How this application relates to the location.</summary>
+    public CandidateRelation Relation { get; init; } = CandidateRelation.Owns;
+
     public IReadOnlyList<Evidence> Evidence { get; init; } = [];
+
+    /// <summary>
+    /// Evidence that this application's content is <em>about</em> the location,
+    /// without owning it. Never scored, and never able to make the candidate an
+    /// owner.
+    /// </summary>
+    public IReadOnlyList<Evidence> RelationshipEvidence { get; init; } = [];
 
     /// <summary>
     /// Internal score derived from <see cref="Evidence"/>. Reported for
@@ -27,18 +74,25 @@ public sealed record CandidateOwner
 
     /// <summary>
     /// True when this candidate is one of the owners AppTrace actually stands
-    /// behind. Locations can have zero, one, or several accepted owners.
+    /// behind. Locations can have zero, one, or several accepted owners. A
+    /// <see cref="CandidateRelation.RelatedTo"/> candidate is never accepted as an
+    /// owner.
     /// </summary>
     public bool Accepted { get; init; }
 
     public Classification Classification { get; init; } = Classification.Unknown;
+
+    /// <summary>True when this candidate asserts ownership rather than relatedness.</summary>
+    public bool Owns => Relation == CandidateRelation.Owns;
 
     public IEnumerable<Evidence> Supporting => Evidence.Where(e => e.SupportsAttribution);
 
     public IEnumerable<Evidence> Contradicting => Evidence.Where(e => !e.SupportsAttribution);
 
     public override string ToString()
-        => $"{AppDisplayName ?? AppId} ({Classification.Symbol()}, score {Score})";
+        => Relation == CandidateRelation.Owns
+            ? $"{AppDisplayName ?? AppId} ({Classification.Symbol()}, score {Score})"
+            : $"{AppDisplayName ?? AppId} (RELATED_TO)";
 }
 
 /// <summary>
@@ -119,7 +173,17 @@ public sealed class FootprintItem
     public IReadOnlyList<ScanError> Errors { get; init; } = [];
 
     public IReadOnlyList<CandidateOwner> AcceptedOwners
-        => CandidateOwners.Where(c => c.Accepted).ToArray();
+        => CandidateOwners.Where(c => c.Accepted && c.Owns).ToArray();
+
+    /// <summary>
+    /// Applications whose content this location is about, without owning it.
+    /// </summary>
+    /// <remarks>
+    /// These applications receive no bytes. The relationship is an interpretation
+    /// of the location, not a second claim on it.
+    /// </remarks>
+    public IReadOnlyList<CandidateOwner> RelatedApplications
+        => CandidateOwners.Where(c => c.Relation == CandidateRelation.RelatedTo).ToArray();
 
     /// <summary>Primary accepted owner, when there is exactly one.</summary>
     public CandidateOwner? PrimaryOwner

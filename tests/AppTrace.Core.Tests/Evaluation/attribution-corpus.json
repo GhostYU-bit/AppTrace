@@ -150,6 +150,18 @@
       "id": "app-stronghold",
       "displayName": "Stronghold Tool",
       "publisher": "Stronghold Systems"
+    },
+    {
+      "id": "app-ownerapp",
+      "installLocation": "C:\\Users\\user\\AppData\\Local\\OwnerApp",
+      "displayName": "Owner App",
+      "publisher": "Owner Labs"
+    },
+    {
+      "id": "app-relatedproduct",
+      "installLocation": "C:\\Program Files\\Related Ltd\\Related Product",
+      "displayName": "Related Product",
+      "publisher": "Related Ltd"
     }
   ],
   "cases": [
@@ -671,6 +683,58 @@
           "ExactDirectoryNameMatch"
         ]
       }
+    },
+    {
+      "id": "REL-SUBJECT-DATA-SYNTHETIC",
+      "current": {
+        "owner": "Owner App",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "InstallLocationMatch",
+          "KnownApplicationPath"
+        ],
+        "relatedApplications": [
+          "Related Product"
+        ]
+      },
+      "reason": "Owner App owns this location; Related Product is what the content is about. No product-specific rule is involved.",
+      "desired": {
+        "owner": "Owner App",
+        "minClassification": "Medium",
+        "relatedApplication": "app-relatedproduct",
+        "relation": "RelatedTo"
+      },
+      "category": "LocalAppData",
+      "description": "An owned tree contains a store whose entries refer to another installed product.",
+      "acceptedAncestors": [
+        "C:\\Users\\user\\AppData\\Local\\OwnerApp"
+      ],
+      "path": "C:\\Users\\user\\AppData\\Local\\OwnerApp\\Recommendations\\Related Product",
+      "apps": [
+        "app-ownerapp",
+        "app-relatedproduct"
+      ]
+    },
+    {
+      "id": "REL-NO-OWNER-NO-RELATION",
+      "current": {
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
+      },
+      "reason": "RelatedTo is only meaningful when something owns the location. Without an owner the honest answer is UNKNOWN, not a fabricated relationship.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown",
+        "relationNote": "No relationship may be invented: a relationship needs an owner to be relative to."
+      },
+      "category": "LocalAppData",
+      "description": "A subject store whose containing tree has no established owner.",
+      "acceptedAncestors": [],
+      "path": "C:\\Users\\user\\AppData\\Local\\NobodyOwnsThis\\Recommendations\\Related Product",
+      "apps": [
+        "app-relatedproduct"
+      ]
     }
   ]
 }

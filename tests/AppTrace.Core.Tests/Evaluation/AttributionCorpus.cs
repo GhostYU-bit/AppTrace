@@ -37,8 +37,18 @@ internal sealed class CorpusDesired
     /// <summary>Explicit allowed classifications, for the structural outcomes.</summary>
     public IReadOnlyList<string> AllowedClassifications { get; init; } = [];
 
-    /// <summary>Reserved for the V2 relationship model (Task 06). Not yet reachable.</summary>
+    /// <summary>
+    /// The relation the location's content should have to another application.
+    /// Currently only <c>RelatedTo</c> is expected anywhere in the corpus.
+    /// </summary>
     public string? Relation { get; init; }
+
+    /// <summary>
+    /// Application id whose content this location is expected to be about. Required
+    /// whenever <see cref="Relation"/> is set: a relationship is between two
+    /// applications, so naming only the relation would not be checkable.
+    /// </summary>
+    public string? RelatedApplication { get; init; }
 
     public string? RelationNote { get; init; }
 }

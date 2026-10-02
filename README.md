@@ -48,8 +48,9 @@ model and confidence semantics, the filesystem semantic layer, the
 ownership/relationship model, and the static provenance sources (App Paths,
 services, scheduled tasks, Run keys, shortcuts and uninstall `DisplayIcon` values)
 are implemented, plus the publisher named by a binary's embedded Authenticode
-certificate as bounded corroboration. MSIX package mapping is not yet integrated and
-is the recommended next evidence source.
+certificate as bounded corroboration, and Windows package identity (MSIX/AppX), which
+attributes each package's `%LOCALAPPDATA%\Packages\<PackageFamilyName>` data namespace
+from the package registration itself rather than from the directory name.
 
 Expect, in particular:
 
@@ -174,8 +175,9 @@ Useful options:
 
 `%LOCALAPPDATA%` is treated as a first-class application location, because
 Electron/Squirrel-style applications keep their real payload there rather than in
-Program Files. `%LOCALAPPDATA%\Packages` (MSIX package payloads) is measured but
-not partitioned yet, and the report says so.
+Program Files. `%LOCALAPPDATA%\Packages` is attributed per package from Windows
+package identity: a `<PackageFamilyName>` data namespace belongs to the package that
+registered it, and to nothing else (see [docs/ATTRIBUTION_ENGINE_V2.md](docs/ATTRIBUTION_ENGINE_V2.md) §3.7).
 
 ## How attribution works, briefly
 

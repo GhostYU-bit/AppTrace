@@ -142,6 +142,7 @@ AppIdentity            one installed application
   InstallLocation, NormalizedInstallLocation
   DisplayIcon, UninstallString, RegistrySource, ProductCode
   RegistryRoot, DiscoveryKind          (uninstall registry vs MSIX)
+  PackageFamilyNames[]                 package family names; empty = none observed
 
 FootprintItem          one accounted filesystem location
   Path, DirectoryName, Category, Depth, ParentPath
@@ -168,7 +169,8 @@ Evidence               one machine-readable reason
   Kind                 Identity / Provenance / Structure / Relationship / Contradiction
   Description          the specific values that matched
   Strength             Weak / Moderate / Strong / Decisive
-  Source               Registry / Filesystem / ExecutableMetadata / Authenticode / PathHeuristic / Derived
+  Source               Registry / Filesystem / ExecutableMetadata / Authenticode /
+                       PackageIdentity / PathHeuristic / Derived
   SupportsAttribution  false means this record argues against the claim
   Weight               signed contribution to Score
   Specificity          how much of a product's name a match accounts for

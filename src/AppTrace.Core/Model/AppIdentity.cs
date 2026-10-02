@@ -52,6 +52,24 @@ public sealed class AppIdentity
     public DiscoveryKind DiscoveryKind { get; init; } = DiscoveryKind.UninstallRegistry;
 
     /// <summary>
+    /// Windows package family names (MSIX/AppX) registered for this application.
+    /// Empty for a classic Win32 installation.
+    /// </summary>
+    /// <remarks>
+    /// <para>A package family name is structured Windows identity rather than a
+    /// name resemblance: Windows registers the package under it, and the package's
+    /// own data namespace is exactly the directory
+    /// <c>%LOCALAPPDATA%\Packages\&lt;package family name&gt;</c>. It is how a
+    /// packaged application is connected to the storage Windows has already
+    /// assigned to it, without comparing display names.</para>
+    /// <para>A classic record may carry one after reconciliation, when Windows
+    /// registration and a package registration were shown to describe the same
+    /// user-facing application. An empty list therefore means "no package
+    /// registration was observed for this application", not "unknown".</para>
+    /// </remarks>
+    public IReadOnlyList<string> PackageFamilyNames { get; init; } = [];
+
+    /// <summary>
     /// Directory name candidates derived from the identity, used as scan hints.
     /// AppTrace uses these only to prioritise inspection; attribution is always
     /// performed by <c>AttributionEngine</c> from evidence.

@@ -84,8 +84,7 @@ public sealed class AppTraceScanner
                 .ToArray();
         }
 
-        foreach (var exclusion in ScanOptions.DefaultExclusions(KnownFolders.LocalAppData() ?? string.Empty)
-                     .Concat(_options.ExcludedSubdirectories))
+        foreach (var exclusion in _options.ExcludedSubdirectories)
         {
             _walker.ExcludeSubtree(exclusion);
         }

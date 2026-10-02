@@ -450,6 +450,7 @@ public class FilesystemScanningTests
             RegistrySource = app.RegistrySource,
             RegistryRoot = app.RegistryRoot,
             DiscoveryKind = app.DiscoveryKind,
+            PackageFamilyNames = app.PackageFamilyNames,
         };
     }
 

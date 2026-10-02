@@ -198,11 +198,11 @@ internal static class Program
         }
 
         Console.WriteLine();
-        Console.WriteLine("Measured but never partitioned (MSIX package payloads):");
-        foreach (var exclusion in ScanOptions.DefaultExclusions(KnownFolders.LocalAppData() ?? string.Empty))
-        {
-            Console.WriteLine($"  {exclusion}");
-        }
+        Console.WriteLine("Package data roots attributed from Windows package identity:");
+        var packageDataRoot = KnownFolders.LocalAppData();
+        Console.WriteLine(packageDataRoot is { Length: > 0 }
+            ? $"  {Path.Combine(packageDataRoot, "Packages")}"
+            : "  (no per-user package root on this machine)");
 
         return 0;
     }

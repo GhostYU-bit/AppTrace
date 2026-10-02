@@ -194,11 +194,26 @@ public sealed class AttributionEngine
     private readonly Dictionary<string, ExecutableProbe> _executableProbeCache = new(StringComparer.OrdinalIgnoreCase);
     private int _executableProbes;
 
+    /// <summary>
+    /// Normalized <c>%LOCALAPPDATA%\Packages\&lt;package family name&gt;</c> path →
+    /// the packaged application Windows registered under that name, together with
+    /// the name itself.
+    /// </summary>
+    /// <remarks>
+    /// Built from structured package identity, so the lookup is an exact directory
+    /// match rather than a comparison of display names. Deliberately exact: an
+    /// ancestor lookup window would let the claim reach
+    /// <c>%LOCALAPPDATA%\Packages</c> itself, and a descendant rule would let it
+    /// reach the next package's data. Neither is true, so neither is possible.
+    /// </remarks>
+    private readonly Dictionary<string, (AppIdentity App, string PackageFamilyName)> _packageDataRoots = new(StringComparer.Ordinal);
+
     public AttributionEngine(
         IReadOnlyList<AppIdentity> apps,
         AttributionOptions? options = null,
         Discovery.ProvenanceIndex? provenance = null)
     {
+        _options = options ?? new AttributionOptions();
         _apps = apps;
         _provenance = provenance ?? Discovery.ProvenanceIndex.Empty;
         _appsById = new Dictionary<string, AppIdentity>(StringComparer.Ordinal);
@@ -265,7 +280,23 @@ public sealed class AttributionEngine
             }
         }
 
-        _options = options ?? new AttributionOptions();
+        var packageDataRoot = _options.PackageDataRoot ?? DefaultPackageDataRoot();
+        if (packageDataRoot is { Length: > 0 })
+        {
+            foreach (var app in apps)
+            {
+                foreach (var packageFamilyName in app.PackageFamilyNames)
+                {
+                    if (string.IsNullOrWhiteSpace(packageFamilyName))
+                    {
+                        continue;
+                    }
+
+                    _packageDataRoots[TextNormalizer.NormalizePath(Path.Combine(packageDataRoot, packageFamilyName))]
+                        = (app, packageFamilyName);
+                }
+            }
+        }
     }
 
     private static void AddToIndex(
@@ -282,12 +313,22 @@ public sealed class AttributionEngine
         list.Add(app);
     }
 
+    /// <summary>
+    /// The machine's own package data root, used when the caller does not supply
+    /// one.
+    /// </summary>
+    private static string? DefaultPackageDataRoot()
+        => Discovery.KnownFolders.LocalAppData() is { Length: > 0 } localAppData
+            ? Path.Combine(localAppData, "Packages")
+            : null;
+
     /// <summary>Evaluates one directory.</summary>
     public LocationAttribution Evaluate(AttributionInput input)
     {
         var evidenceByApp = new Dictionary<string, List<Evidence>>(StringComparer.Ordinal);
 
         CollectDeclaredInstallLocationEvidence(input, evidenceByApp);
+        CollectPackageDataRootEvidence(input, evidenceByApp);
         CollectInheritedOwnershipEvidence(input, evidenceByApp);
         CollectProvenanceAnchorEvidence(input, evidenceByApp);
         CollectNameEvidence(input, evidenceByApp);
@@ -437,6 +478,52 @@ public sealed class AttributionEngine
     private static bool DeclaresThisExactDirectory(AppIdentity app, string normalizedPath)
         => app.NormalizedInstallLocation is { Length: > 0 } install
             && string.Equals(normalizedPath, install, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Recognises a packaged application's own data namespace.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The question this answers.</b> Not "does this path look like the
+    /// package", but "is this directory the identity Windows registered for this
+    /// package". Windows gives every package a package family name, and the
+    /// package's per-user data lives in exactly
+    /// <c>%LOCALAPPDATA%\Packages\&lt;package family name&gt;</c>. The directory
+    /// name therefore <em>is</em> the structured identity, and the match is an exact
+    /// string equality against the name derived from Windows' own registration —
+    /// there is no display-name comparison anywhere in this detector.</para>
+    /// <para><b>Why the match is exact rather than an index lookup.</b> A
+    /// containment rule would let <c>%LOCALAPPDATA%\Packages</c> be claimed as an
+    /// ancestor of some package, and a prefix rule would leak one package's claim
+    /// onto a neighbouring package whose family name shares a prefix. Both are
+    /// false statements about a namespace Windows partitioned per package, so
+    /// neither is representable here.</para>
+    /// <para><b>What it does not do.</b> It cannot create a candidate for any other
+    /// directory, cannot reach a parent or a sibling, and does not apply to
+    /// framework packages, which are not discovered as applications at all. It is
+    /// emitted before name evidence deliberately: inside
+    /// <c>%LOCALAPPDATA%\Packages</c> a segment is by definition package content,
+    /// so the authoritative registration is the only thing that may identify an
+    /// owner there.</para>
+    /// </remarks>
+    private void CollectPackageDataRootEvidence(
+        AttributionInput input,
+        Dictionary<string, List<Evidence>> evidenceByApp)
+    {
+        if (!_packageDataRoots.TryGetValue(input.NormalizedPath, out var match))
+        {
+            return;
+        }
+
+        Add(
+            evidenceByApp,
+            match.App,
+            EvidenceType.PackageDataRoot,
+            EvidenceStrength.Decisive,
+            EvidenceSource.PackageIdentity,
+            $"Windows registers this directory as the data namespace of the \"{match.App.DisplayName}\" "
+                + $"package, whose package family name is \"{match.PackageFamilyName}\".",
+            true);
+    }
 
     /// <summary>
     /// Generates and validates name-derived identity candidates for one directory.
@@ -1934,8 +2021,18 @@ public sealed class AttributionEngine
                 or EvidenceType.NormalizedNameMatch
                 or EvidenceType.ExecutableMetadataMatch);
 
-        // GATE 2: the application's own registration names this exact directory.
-        if (types.Contains(EvidenceType.DeclaredInstallLocation))
+        // GATE 2: an authoritative Windows registration names this exact directory
+        // as belonging to this application. Two records qualify, and they qualify
+        // for the same reason: the directory is not inferred, it is declared.
+        // DeclaredInstallLocation is the application's own uninstall entry naming
+        // its install root; PackageDataRoot is Windows' package registration naming
+        // the package's own data namespace, whose directory name is the package
+        // family name it registered. Both are exact-directory statements, neither
+        // can be reached by name resemblance, and widening this gate is what lets
+        // package identity establish ownership without inventing an MSIX-specific
+        // shortcut outside the evidence model.
+        if (types.Contains(EvidenceType.DeclaredInstallLocation)
+            || types.Contains(EvidenceType.PackageDataRoot))
         {
             return Classification.Confirmed;
         }
@@ -2389,4 +2486,15 @@ public sealed class AttributionOptions
     /// contract it exists to test.
     /// </remarks>
     public Func<string, ExecutableProbe>? ProbeOverride { get; init; }
+
+    /// <summary>
+    /// The directory under which Windows places each package's own data namespace,
+    /// i.e. <c>%LOCALAPPDATA%\Packages</c>.
+    /// </summary>
+    /// <remarks>
+    /// Null, the default, resolves the running machine's own root. Tests supply a
+    /// synthetic root so package attribution can be exercised against fixtures
+    /// rather than against whatever happens to be installed.
+    /// </remarks>
+    public string? PackageDataRoot { get; init; }
 }

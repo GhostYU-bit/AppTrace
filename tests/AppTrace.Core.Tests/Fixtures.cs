@@ -8,13 +8,23 @@ namespace AppTrace.Core.Tests;
 /// </summary>
 internal static class Fixtures
 {
+    /// <summary>
+    /// The synthetic per-user package root these fixtures evaluate against, so
+    /// package attribution never depends on what is installed on the machine
+    /// running the tests.
+    /// </summary>
+    public const string PackageDataRoot = @"C:\Users\user\AppData\Local\Packages";
+
     public static AppIdentity App(
         string displayName,
         string? publisher = null,
         string? installLocation = null,
         string? version = null,
         string? id = null,
-        string? productCode = "{0000-0000}")
+        string? productCode = "{0000-0000}",
+        string? packageFamilyName = null,
+        string? displayIcon = null,
+        string? uninstallString = null)
         => new()
         {
             Id = id ?? "app-" + TextNormalizer.Fold(displayName),
@@ -25,9 +35,12 @@ internal static class Fixtures
             Version = version,
             InstallLocation = installLocation,
             NormalizedInstallLocation = installLocation is null ? null : TextNormalizer.NormalizePath(installLocation),
+            DisplayIcon = displayIcon,
+            UninstallString = uninstallString,
             ProductCode = productCode,
             RegistrySource = @"HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\Test",
             RegistryRoot = RegistryRootKind.LocalMachine64,
+            PackageFamilyNames = packageFamilyName is null ? [] : [packageFamilyName],
         };
 
     /// <summary>
@@ -46,11 +59,16 @@ internal static class Fixtures
         LocationCategory category = LocationCategory.ProgramFiles,
         IReadOnlyList<string>? acceptedAncestors = null,
         IReadOnlyList<OwnedAncestor>? ownedAncestors = null,
-        Discovery.ProvenanceIndex? provenance = null)
+        Discovery.ProvenanceIndex? provenance = null,
+        string? packageDataRoot = null)
     {
         var engine = new AttributionEngine(
             apps,
-            new AttributionOptions { MaxExecutableProbes = 0 },
+            new AttributionOptions
+            {
+                MaxExecutableProbes = 0,
+                PackageDataRoot = packageDataRoot ?? PackageDataRoot,
+            },
             provenance);
         var normalized = TextNormalizer.NormalizePath(path);
 
@@ -85,7 +103,12 @@ internal static class Fixtures
     {
         var engine = new AttributionEngine(
             apps,
-            new AttributionOptions { MaxExecutableProbes = 8, ProbeOverride = probeOverride });
+            new AttributionOptions
+            {
+                MaxExecutableProbes = 8,
+                ProbeOverride = probeOverride,
+                PackageDataRoot = PackageDataRoot,
+            });
         var normalized = TextNormalizer.NormalizePath(path);
 
         return engine.Evaluate(new AttributionInput
@@ -114,7 +137,8 @@ internal static class Fixtures
         string ownedAncestorPath,
         string ownedAncestorAppId,
         LocationCategory category = LocationCategory.LocalAppData,
-        Classification ancestorClassification = Classification.Confirmed)
+        Classification ancestorClassification = Classification.Confirmed,
+        string? packageDataRoot = null)
         => Evaluate(
             path,
             apps,
@@ -126,7 +150,8 @@ internal static class Fixtures
                     TextNormalizer.NormalizePath(ownedAncestorPath),
                     ownedAncestorAppId,
                     ancestorClassification),
-            ]);
+            ],
+            packageDataRoot: packageDataRoot);
 
     /// <summary>
     /// The deepest well-known root this test path sits under, mirroring how the

@@ -63,15 +63,16 @@ Filesystem scan and path semantics         (measurement; PathSemantics per segme
         ↓
 Detectors, in this fixed order
         1. Declared install location
-        2. Inherited ownership            (an ancestor is owned)
-        3. Provenance anchors             (Windows registrations)
-        4. Directory name
-        5. Data-root product boundary
-        6. Publisher / vendor namespace
-        7. Context                        (parent / child / known-application path)
-        8. Executable metadata
-        9. Binary signer                  (embedded Authenticode certificate)
-       10. Bounding                       (shared / conflicting / system-managed)
+        2. Package data root              (Windows package registration)
+        3. Inherited ownership            (an ancestor is owned)
+        4. Provenance anchors             (Windows registrations)
+        5. Directory name
+        6. Data-root product boundary
+        7. Publisher / vendor namespace
+        8. Context                        (parent / child / known-application path)
+        9. Executable metadata
+       10. Binary signer                  (embedded Authenticode certificate)
+       11. Bounding                       (shared / conflicting / system-managed)
         ↓
 Candidate generation                       (BuildCandidates: score, sort, cap)
         ↓
@@ -86,13 +87,17 @@ Subtree closure / residual accounting      (AppTraceScanner)
 Measurement and reporting                  (FootprintReport → TextReporter / JsonReporter)
 ```
 
-Detector order matters in three places:
+Detector order matters in four places:
 
 * **Inherited ownership runs early**, so an ancestor's claim is on the table before
   name evidence and the two can be compared rather than the name silently winning.
 * **Provenance runs before name evidence**, because an independent registration must
   be able to *propose* a candidate whose own name would otherwise be suppressed by
   position (§6).
+* **Package data root runs before name evidence too**, and for a stronger reason:
+  inside `%LOCALAPPDATA%\Packages` a directory name *is* a package family name, so
+  no name comparison can identify an owner there at all. The Windows registration is
+  the only thing that may (§3.7).
 * **Bounding runs last**, so contradiction and ambiguity records are computed against
   the candidate set the other detectors produced.
 
@@ -133,7 +138,7 @@ explicit and auditable.
 | Kind | Evidence types (¹ = reserved, see below) |
 | --- | --- |
 | **Identity** | `ExactDirectoryNameMatch`, `NormalizedNameMatch`, `ExecutableMetadataMatch`, `SignerPublisherMatch` |
-| **Provenance** | `DeclaredInstallLocation`, `InstallLocationMatch`, `InheritedFromOwner`, `DisplayIconMatch`, `ProvenanceAnchorMatch`, `DiscoveryLocationMatch`¹, `ProductCodeMatch`¹, `RegistryReference`¹ |
+| **Provenance** | `DeclaredInstallLocation`, `PackageDataRoot`, `InstallLocationMatch`, `InheritedFromOwner`, `DisplayIconMatch`, `ProvenanceAnchorMatch`, `DiscoveryLocationMatch`¹, `ProductCodeMatch`¹, `RegistryReference`¹ |
 | **Structure** | `KnownApplicationPath`, `DataRootProductBoundary`, `KnownPublisherNamespace`, `ParentDirectoryMatch`, `MultipleCandidateOwners`, `SharedPublisherDirectory`, `PublisherMatch`, `ChildDirectoryMatch`¹, `GenericDirectoryName`¹ |
 | **Relationship** | `SubjectNameMatch`, `UnknownApplication`¹ |
 | **Contradiction** | `PublisherMismatch`, `ConflictingApplicationMatch`¹, `SystemManagedPath`¹ |
@@ -183,6 +188,7 @@ choice, because Identity alone can never reach HIGH.
 | Evidence type | Weight | Kind |
 | --- | ---: | --- |
 | `DeclaredInstallLocation` | +95 | Provenance |
+| `PackageDataRoot` | +95 | Provenance |
 | `DiscoveryLocationMatch`¹ | +85 | Provenance |
 | `InstallLocationMatch` | +70 | Provenance |
 | `DisplayIconMatch` | +60 | Provenance |
@@ -273,6 +279,89 @@ per-directory basis is not justified by the corroboration a signer provides.
 The certificate is read **on first use**, and only when a candidate already exists,
 rather than during inspection, so directories that produce no candidate pay nothing
 (§15).
+
+### 3.7 Windows package identity
+
+Package identity is the engine's first provenance source that Windows *states* rather
+than the engine *infers*, and the first that governs a namespace no name comparison
+could resolve at all.
+
+**Source.** The per-user package repository
+(`HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages`,
+and the machine-wide equivalent) is read by `UninstallRegistry` as two further
+registration surfaces alongside the four uninstall surfaces. The key name is the
+**package full name**, structured
+`Name_Version_Architecture_ResourceId__PublisherId`, so the **package family name**
+(PFN) is `Name` + `PublisherId`: everything before the *first* `_` and everything after
+the *last* one. Only key names shaped like a full name are read —
+`PackageFamilyNameOf` returns `null` for anything else.
+
+**Identity model.** A discovered package becomes an ordinary `AppIdentity` with
+`DiscoveryKind.MsixPackage` carrying one entry in `PackageFamilyNames`. It is not a
+parallel model: it flows through the same candidate → evidence → ownership →
+classification pipeline as every uninstall-registered application, and is reported by
+the same reporters. `PackageFamilyNames` empty means *no package registration was
+observed*, not *unknown*.
+
+**What is deliberately excluded.** Packages whose `Framework` value is `1` are not
+represented, and neither are entries whose display name is blank, a resource reference
+(`@{…}`) or `ms-resource:…`. A framework or resource package is shared infrastructure:
+granting it user-facing product ownership is exactly the leak §6.4 exists to prevent.
+Its data namespace therefore stays `UNKNOWN`, which is an honest answer, not a gap.
+
+**Ownership.** `CollectPackageDataRootEvidence` emits `PackageDataRoot`
+(**Provenance, +95**, `EvidenceSource.PackageIdentity`, decisive strength) under
+exactly one condition: the directory being evaluated **is**
+`<LocalAppData>\Packages\<PFN>` for a PFN some discovered package declared. The lookup
+is an exact dictionary hit — no ancestor window, no descendant rule — so the claim
+cannot reach:
+
+* **above** the package boundary: `%LOCALAPPDATA%\Packages` itself is never owned;
+* **sideways**: a sibling PFN is a different key;
+* **across shared package infrastructure**: framework packages are absent from the
+  index entirely.
+
+Content *inside* the namespace is handled by ordinary inheritance (§8), which is why
+the boundary is asserted once at the namespace root rather than re-derived per child.
+
+`PackageDataRoot` is Provenance rather than Identity for the same reason a declared
+install location is: it is an independent Windows statement that a namespace belongs to
+this application, not a resemblance between strings. Like `DeclaredInstallLocation` it
+satisfies the `CONFIRMED` gate (§10.1) — a location Windows itself names needs no name
+corroboration.
+
+**Reconciliation.** A package and an uninstall record may describe the same user-facing
+application — vendor-shipped desktop apps are routinely registered both ways.
+`ReconcilePackages` merges a package into a classic record only on a structural
+agreement about where the product lives, and only when exactly **one** classic record
+qualifies:
+
+1. the two folded names are equal **and** the package root *is* the classic record's
+   `NormalizedInstallLocation` or lies inside it; or
+2. the classic record's own registered executable — its `DisplayIcon` or
+   `UninstallString` — resolves to a file inside the package root.
+
+Form 2 needs no name agreement, because the registration itself names a file in the
+package's payload: Windows titles one installation "Microsoft OneDrive" in the uninstall
+entry and "OneDrive" in the package manifest, while both point at the same versioned
+install root. Leaving that pair unreconciled would not be harmless — with two
+applications matching the directory name `OneDrive`, the uniqueness rule (§5.3)
+suppresses the name match for *both*, and the product's own data tree drops to
+`UNKNOWN`. Form 2 is what keeps package discovery from turning a duplicate registration
+into lost attribution.
+
+The classic record survives and gains the package's PFNs: it carries the install root
+and the uninstall entry a user actually sees. Nothing merges on a name resemblance
+alone — a prefix/suffix or fuzzy name match is deliberately *not* a merge basis — so
+"same product, different install root" stays two applications, an explicit unresolved
+identity rather than a false merge. `Deduplicate` keys packages by PFN instead of by
+name, so two independently installed copies of one product are never collapsed into one
+identity.
+
+**Absence is not opposition.** A package whose root lies under `%WINDIR%` records no
+install location — resolving it would reach outside the scan roots — and a package
+whose display name Windows cannot resolve keeps an unresolved name. Neither is recorded
+as a contradiction.
 
 ---
 
@@ -522,6 +611,12 @@ the index. It never enumerates services or tasks per directory.
 | `RunKey` | Windows starts this executable for this user or machine |
 | `Shortcut` | This shortcut targets this executable or path |
 
+Package identity (§3.7) is provenance of a different shape: it names a *namespace* a
+package governs rather than an executable it launches, so it is not a
+`ProvenanceSource` and it is not consumed by this index. It carries its own
+`EvidenceSource.PackageIdentity`, and it is resolved once into an exact-match
+dictionary rather than queried per directory.
+
 Each anchor carries an **`ExecutableRole`** — `MainApplication`, `Launcher`,
 `Updater`, `Uninstaller`, `Service`, `Helper` — so an uninstaller or updater is not
 read as the product's own executable. Only `MainApplication` anchors may prove that a
@@ -635,7 +730,7 @@ score only orders and corroborates within it.
 | --- | --- |
 | No supporting evidence | `UNKNOWN` |
 | A decisive contradiction is present | `UNKNOWN` — gate short-circuits |
-| `DeclaredInstallLocation` present | `CONFIRMED` |
+| `DeclaredInstallLocation` or `PackageDataRoot` present | `CONFIRMED` |
 | Provenance **and** corroborating identity (specificity ≥ 0.50) | `HIGH` |
 | Provenance without corroborating identity | `MEDIUM` |
 | Identity without provenance | `MEDIUM` |
@@ -821,6 +916,11 @@ Additional guarantees:
   surfaced as a warning, never swallowed. The signer is read lazily from that same
   cached probe, and only when a candidate already exists, so it adds no probe of its
   own and costs nothing on directories that produce no candidate.
+* **Package data roots are resolved once.** The package repository is read during
+  discovery and folded into an exact-match dictionary at engine construction, so
+  per-directory package attribution is a dictionary lookup rather than a repeated
+  registry read (§3.7). The measured cost of the two extra registration surfaces is
+  reported in [`EVALUATION.md`](EVALUATION.md).
 
 ---
 
@@ -849,8 +949,17 @@ heuristic.
 * **Application-data trees lacking current identity or provenance** — the dominant
   UNKNOWN cause. A data directory whose name corresponds to no discovered installed
   identity stays UNKNOWN rather than being guessed.
-* **Package/MSIX identity not yet integrated** — `%LOCALAPPDATA%\Packages` is
-  measured but not partitioned into per-package ownership.
+* **Frameworks, resources and optional packages are not user-facing products.** The
+  repository surface AppTrace reads carries exactly one structured package-type flag
+  (`Framework`), so framework packages are excluded outright and their data namespaces
+  stay `UNKNOWN` (§3.7). Resource, localization, optional and dependency packages carry
+  no such flag: they remain present as ordinary identities and are never merged into
+  the product they support, so they cannot leak ownership — but they also cannot be
+  told apart from a small user-facing application.
+* **Package entries whose display name Windows cannot resolve** (`@{…}`,
+  `ms-resource:…`) keep their identity and attribute their data namespace by PFN, but
+  present no readable name. Resolving the reference is a different subsystem than
+  attribution.
 * **A known display-name corruption** on one publisher's uninstall entry whose tail
   is not decodable text. Investigation showed the stored registry value itself is
   damaged, not the reader, so the fix would be publisher-specific string repair rather
@@ -894,11 +1003,16 @@ Task 05 generic-token false-positive family:  still refused
 DaVinci/Electron:  must not become Git-owned
 signer:  cannot propose a candidate, cannot choose among same-publisher products,
          cannot claim a generic container, and absence is never a contradiction
+package identity (Task 10):  cannot claim the Packages container, cannot claim a
+         sibling package, cannot claim outside the package data root, does not speak
+         for a framework package, and never merges a package into a classic record on
+         a name resemblance alone
 ```
 
-The signer expectations are covered by `SignerEvidenceTests`, which drive the source
-through the engine's probe override rather than a real signed binary, so they are
-machine-independent like the corpus.
+The signer expectations are covered by `SignerEvidenceTests` and the package
+expectations by `PackageEvidenceTests`; both drive the engine's overrides rather than
+reading real binaries or real registry hives, so they are machine-independent like the
+corpus.
 
 Because the machine may change between scans, evaluation must keep distinguishing
 engine-caused changes from machine-state changes (§14).
@@ -913,21 +1027,33 @@ name/path guessing. A new heuristic after this milestone requires a concrete
 reproducible failure family and regression justification.
 
 The non-goals that follow from this — none of which the current engine implements —
-are: MSIX/`PackageFamilyName` attribution, Steam/Epic manifests, runtime observation
-(ETW/USN), historical attribution, orphan detection, and any product-specific alias or
-path database. Authenticode *verification* remains out of scope too: only the embedded
-certificate's publisher is read, as bounded corroboration (§3.6), never trust-chain
-verification or a signer-to-directory mapping. AppTrace is not a system cleaner;
-deletion and cleanup are out of scope.
+are: Steam/Epic manifests, runtime observation (ETW/USN), historical attribution,
+orphan detection, and any product-specific alias or path database. Authenticode
+*verification* remains out of scope too: only the embedded certificate's publisher is
+read, as bounded corroboration (§3.6), never trust-chain verification or a
+signer-to-directory mapping. AppTrace is not a system cleaner; deletion and cleanup are
+out of scope.
 
 Signer evidence was added in Task 09 as exactly this kind of source — publisher-level
 corroboration only. It changed no verdict on the field baseline, which is the expected
 outcome for a source that is deliberately barred from establishing ownership.
 
-The recommended next evidence source is **MSIX/`PackageFamilyName` attribution**, which
-is independent of path naming and targets the largest known UNKNOWN family
-(unattributed per-product data trees and package payloads) without touching the
-heuristic layer.
+Package identity was added in Task 10 (§3.7) as the second such source, and it is the
+first one that lets the engine *know* an owner rather than infer one: Windows states
+which package governs `<LocalAppData>\Packages\<PFN>`, so the field baseline moves —
+unlike the signer, this source is allowed to establish ownership, and the corpus gate
+is what keeps that permission honest.
+
+The recommended next evidence source is **runtime observation of first-run
+directory creation** (ETW or the USN journal). It is the only class of source that can
+address the dominant remaining UNKNOWN family — data trees created at first run that no
+static registration mentions (§11) — because it observes the creation act itself rather
+than reconstructing it. It is not a small addition: it needs capture, storage, staleness
+and privacy semantics of its own, and it must never become a second, hidden persistence
+layer for ownership (§14). If a smaller step is preferred, Steam/Epic manifests are
+independent of path naming and bounded in scope, but they would attribute a
+platform's install root rather than a product's own data, which §16 already identifies
+as a concept mismatch.
 
 ---
 

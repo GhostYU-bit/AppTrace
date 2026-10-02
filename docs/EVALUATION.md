@@ -288,6 +288,127 @@ No ownership or classification changed, which is the expected result for a sourc
 is barred from establishing ownership and from choosing among same-publisher products.
 Task 09 is therefore justified by **explainable corroboration**, not by recall.
 
+### Task 10 package identity field evaluation
+
+Task 10 added Windows package identity (ATTRIBUTION_ENGINE_V2.md §3.7). Unlike the
+signer, this source **may establish ownership**, so it moves what the gates are
+evaluated against rather than leaving them alone. The two fixture baselines were
+re-measured afterwards and are unchanged:
+
+```text
+corpus wrong-owner HIGH/CONFIRMED       0 of 4    (unchanged)
+real-machine wrong-owner HIGH/CONFIRMED 1 of 15   (unchanged)
+```
+
+The two fixture sets cannot see the new source either: both run with executable
+probing disabled and no provenance index, and neither fixture declares package family
+names, so no package data root is ever generated there. Package behaviour is covered
+instead by `PackageEvidenceTests`, which is machine-independent in the same way.
+
+A read-only A/B on one machine — `apptrace scan --filter "AppData\Local"`, release
+build, executable probing **enabled**, so this is a live-machine comparison and not a
+fixture run:
+
+```text
+                                        Task 09     Task 10
+applications discovered                      43          83
+  of which MSIX packages                      0          40
+locations                                21 892      22 860
+scan.durationSeconds                     21.802      22.068
+confident bytes (CONFIRMED + HIGH)      5.95 GB     13.18 GB
+shared / ambiguous bytes                6.95 GB      6.95 GB
+unattributed bytes                     22.93 GB     18.83 GB
+```
+
+Package identities and the namespaces they govern:
+
+```text
+package registrations read                        47
+  kept as their own identity                      40
+  reconciled into a classic record                 7
+%LOCALAPPDATA%\Packages locations                 967     4.87 GB
+  attributed from package identity                 44     3.82 GB
+  left UNKNOWN (frameworks, unresolved names)     923     1.05 GB
+owners per package data root                        1
+```
+
+The attributed half is the point of the task: Windows names the owner, so no inference
+is involved. Representative examples that were `UNKNOWN` before:
+
+```text
+Microsoft Teams            1 579.0 MB   MSTeams_8wekyb3d8bbwe
+Slack                      1 111.9 MB   com.tinyspeck.slackdesktop_8yrtsj140pw4g
+ChatGPT                      982.1 MB   OpenAI.Codex_2p2nqsd0c76g0
+Armoury Crate                117.7 MB
+Windows Web Experience Pack  103.6 MB
+```
+
+The unattributed half is deliberately *not* zero: those are data roots of framework
+packages, which are excluded at read time, and of packages whose display name Windows
+stores as a resource reference. Neither is guessed into a product.
+
+**Reconciliation was not optional, and this is the finding that changed the design.**
+A package and an uninstall entry can describe one user-facing application without
+agreeing on its name. On this machine the MSIX package `OneDrive` and the uninstall
+entry `Microsoft OneDrive` declared the same versioned install root
+(`C:\Program Files\Microsoft OneDrive\26.168.0830.0006`), and a merge rule that
+required equal display names left both in the application list. The duplicate then broke
+attribution *backwards*: with two applications matching the directory name `OneDrive`,
+the uniqueness rule (§5.3 of the engine document) suppressed the name match for **both**,
+and the application's data tree fell out of attribution.
+
+```text
+OneDrive-owned bytes
+  Task 09 baseline                              2.22 GB
+  name-equality merge only                      1.36 GB     <- regression
+  with the structural merge rule                2.22 GB     <- restored
+
+locations whose accepted-owner set changed, Task 09 -> Task 10
+  name-equality merge only                        29
+  with the structural merge rule                   4         all explained below
+
+shared / ambiguous bytes
+  Task 09 baseline                              6.95 GB
+  name-equality merge only                      6.09 GB
+  with the structural merge rule                6.95 GB
+```
+
+The rule that replaced name equality is structural, not a name heuristic: the classic
+record's own `DisplayIcon` / `UninstallString` resolves to a file **inside** the package
+root, so the two registrations name one installed payload — and it requires exactly one
+classic candidate, so an ambiguous pair stays unresolved.
+
+The four remaining owner-set changes were inspected one by one:
+
+```text
+LocalLow\Intel\ShaderCache                  lost 3 Intel owners (absent from the
+                                            registry in the later scan) - machine state
+Local\Microsoft\PowerShell                  gained PowerShell   (newly attributable)
+Local\Microsoft\Windows\PowerShell          gained PowerShell   (newly attributable)
+Local\Microsoft\PowerShell\7.6.6            gained 15 co-owners (SHARED, not confident)
+```
+
+No location lost a *correct* owner to package identity, and no verdict that the
+wrong-owner metric counts changed. Machine causes are separated from engine causes as
+this document requires; a path present in only one scan is never credited to the change
+under evaluation.
+
+Refused and deliberately ambiguous cases, all of which stayed `UNKNOWN` or unresolved:
+
+```text
+a package data root with no registered package            no candidate is invented
+framework packages (Framework = 1)                        excluded, namespace UNKNOWN
+package display name stored as @{...} / ms-resource:...    identity kept, name unresolved
+two classic records naming payload in one package root     package kept separate
+package root under %WINDIR%                               no install location recorded
+```
+
+**Runtime cost.** The two extra registration surfaces are read once during discovery and
+folded into an exact-match dictionary, so attributing 967 package locations costs 967
+dictionary lookups. Measured wall time moved from 21.802 s to 22.068 s (+1.2%) across
+one pair of runs; an earlier pair read 23.696 s (+8.7%), which did not reproduce and is
+run-to-run variance on a live machine rather than a cost of the source.
+
 ---
 
 ## Scans are current-state snapshots

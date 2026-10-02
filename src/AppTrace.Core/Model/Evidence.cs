@@ -127,6 +127,27 @@ public enum EvidenceType
     /// <summary>A registry value outside the uninstall keys references this path.</summary>
     RegistryReference,
 
+    /// <summary>
+    /// Windows registers this exact directory as a package's own data namespace,
+    /// because the directory name is that package's package family name.
+    /// </summary>
+    /// <remarks>
+    /// <para>What it proves: Windows structured identity, not a name resemblance.
+    /// The package family name is derived from the package registration and the
+    /// directory name <em>is</em> that identity, exactly as a declared install
+    /// location is a directory Windows registered for an application. It is
+    /// therefore decisive for the directory it names.</para>
+    /// <para>What it does not prove: anything about the directory's parent, its
+    /// siblings, a shared container, or another package. The record is emitted only
+    /// for an exact package family name match, so
+    /// <c>%LOCALAPPDATA%\Packages</c> itself and every other package's directory
+    /// stay untouched; descendants inherit through ordinary ancestor ownership.</para>
+    /// <para>Framework packages are not discovered as applications, so their data
+    /// namespaces produce no record and stay honestly UNKNOWN rather than being
+    /// credited to the products that depend on them.</para>
+    /// </remarks>
+    PackageDataRoot,
+
     /// <summary>Path sits in a well-known per-application data location.</summary>
     KnownApplicationPath,
 
@@ -260,6 +281,12 @@ public enum EvidenceSource
 
     /// <summary>Embedded Authenticode certificate of a binary (publisher only).</summary>
     Authenticode,
+
+    /// <summary>
+    /// Windows package registration (MSIX/AppX): the package family name Windows
+    /// registered for a packaged application, and the install root it declared.
+    /// </summary>
+    PackageIdentity,
 
     PathHeuristic,
     Derived,

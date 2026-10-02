@@ -46,6 +46,14 @@ public static class EvidenceClassification
         EvidenceType.ProductCodeMatch => EvidenceKind.Provenance,
         EvidenceType.RegistryReference => EvidenceKind.Provenance,
 
+        // Windows package identity is provenance for the same reason a declared
+        // install location is: Windows registered this exact directory as the
+        // package's own data namespace, and the directory name is the package
+        // family name rather than a resemblance to the display name. It is emitted
+        // only for an exact match, so it can never reach a parent, a sibling or a
+        // shared package container.
+        EvidenceType.PackageDataRoot => EvidenceKind.Provenance,
+
         // ---- Structure: what does this path tell us about the storage? ---------
         // None of these can identify an owner. KnownApplicationPath in particular
         // says only "applications store data here", which is true of almost every

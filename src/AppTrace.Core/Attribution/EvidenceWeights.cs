@@ -43,6 +43,14 @@ public static class EvidenceWeights
     {
         // Provenance: the application's own registration names this path.
         EvidenceType.DeclaredInstallLocation => 95,
+
+        // Windows package identity names exactly one package's own data namespace,
+        // which is as authoritative as a declared install location: the directory
+        // name is the package family name Windows registered, so there is nothing
+        // to infer and nothing to corroborate. It is worth the same as a declared
+        // install location rather than more, because it says only "this directory
+        // belongs to this package" and never anything about what contains it.
+        EvidenceType.PackageDataRoot => 95,
         EvidenceType.DiscoveryLocationMatch => 85,
         EvidenceType.InstallLocationMatch => 70,
         EvidenceType.ProductCodeMatch => 55,

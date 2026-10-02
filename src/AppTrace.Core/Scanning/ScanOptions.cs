@@ -13,8 +13,9 @@ public sealed class ScanOptions
 
     /// <summary>
     /// Subdirectories of the scan roots that are measured but never partitioned.
-    /// The default excludes MSIX package payloads, which AppTrace does not
-    /// partition yet and which would otherwise dominate AppData.
+    /// There are none by default: every well-known root is partitioned, including
+    /// <c>%LOCALAPPDATA%\Packages</c>, whose per-package namespaces AppTrace now
+    /// attributes from Windows package identity.
     /// </summary>
     public IReadOnlyList<string> ExcludedSubdirectories { get; init; } = [];
 
@@ -22,10 +23,6 @@ public sealed class ScanOptions
     public string? PathFilter { get; init; }
 
     public static ScanOptions Default { get; } = new();
-
-    /// <summary>Default exclusions applied on top of <see cref="ExcludedSubdirectories"/>.</summary>
-    public static IReadOnlyList<string> DefaultExclusions(string localAppData)
-        => [Path.Combine(localAppData, "Packages")];
 }
 
 /// <summary>The complete result of a scan run.</summary>

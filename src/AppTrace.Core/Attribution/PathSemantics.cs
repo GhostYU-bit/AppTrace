@@ -434,6 +434,17 @@ public static class PathSemantics
         return hex.Length >= 32 && hex.All(Uri.IsHexDigit);
     }
 
+    /// <summary>
+    /// The structure a single segment establishes, judged on its own.
+    /// </summary>
+    /// <remarks>
+    /// For callers that have one segment rather than a path. It answers the same
+    /// question <see cref="Analyse"/> answers for a segment in place — is this
+    /// segment content rather than identity — without the positional rule. Used to
+    /// tell a product-named child apart from a staging or cache directory.
+    /// </remarks>
+    public static StructureKind StructureOf(string segment) => KindOf(segment);
+
     private static StructureKind KindOf(string segment)
         => Anchors.TryGetValue(segment, out var kind) ? kind : StructureKind.Unknown;
 

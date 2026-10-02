@@ -2054,3 +2054,81 @@ UTF-16 code units produce, which points at the stored value rather than at the r
 Because the correction would be publisher-specific string repair rather than a generic
 decoding fix, it was deliberately left out of Task 07.6 and recorded here as an open
 display/identity cleanup item.
+
+## Task 07.7 as built — Single-Product Vendor Namespace Hardening
+
+Task 07.6 recognised a vendor namespace only when two or more installed products shared
+the publisher name. That made the boundary a function of *what else happens to be
+installed today*: removing one product could silently promote a vendor directory to a
+product root. Task 07.7 derives the same boundary from structure instead, so one
+installed product is enough.
+
+### A. A vendor namespace whose product boundary lies below it
+
+`AttributionEngine.ContainerBoundaryOf` gained a third shape, next to the co-declared
+install root and the shared vendor namespace:
+
+> a directory directly inside a scan root, whose name could identify a product, no
+> application claims as its own install location, and beneath which an installed
+> application's *own product boundary* demonstrably lies.
+
+Two existing parts of the model answer the last clause. The product boundary is either
+the directory Windows registers as the application's install location, or a directory
+its own executable is anchored in — and only anchors whose `ExecutableRole` is
+`MainApplication`, so `Vendor\Updater` and `Vendor\cache` cannot stand in for the
+product. The descendant is then required to be *meaningful*: its first segment below the
+candidate must pass `GenericDirectoryNames.CanIdentifyAProduct` and be
+`StructureKind.Unknown` to `PathSemantics`, which is what refuses `Updater`, `cache` and
+a bare version number without extending any word list.
+
+Like the other two shapes, the directory is never established for a single product. The
+scanner descends and resolves each child on its own evidence.
+
+### B. Why it does not depend on inventory cardinality
+
+The rule never counts products. It asks a question about one application — *is this
+application's boundary strictly below this directory?* — and that answer is a property
+of the filesystem and the registration of that one application. Installing or removing
+a sibling changes neither, so the boundary is stable, which is the acceptance criterion
+the task exists to satisfy. The shared-publisher shape is kept because it encodes a
+different fact (several products actively declared the directory); the two coexist.
+
+### C. Identity still beats structure
+
+The layout above is structurally identical to a product whose own program folder sits
+inside its own directory. The only thing that separates them is identity, so a directory
+that is one of the application's own names — its display name or its `ProductCode` — is
+excluded before the rule is considered, and a directory some application registers as
+its exact install location is excluded as well. The product code matters because the
+field case that forced this guard had a display name in Chinese script and a folder in
+Latin script, so the two names only met through the registered code. Without the
+exclusion, `%LOCALAPPDATA%\Doubao` — a genuine product root whose program lives in
+`Doubao\Application` — was decomposed and most of the product's own user data fell to
+UNKNOWN.
+
+### D. Measured effect and what was deliberately not done
+
+The suite grew from 249 to 256 tests, covering the single-product shape, the
+cardinality invariant (one product versus two, same evidence, same verdict), the genuine
+product root, weak infrastructure descendants, staging children and the generic
+container name. Corpus and hand-labelled real-machine metrics are unchanged; all seven
+Task 05 refusals and the Electron/Git refusal still hold.
+
+A read-only full-machine scan, compared against the Task 07.6 engine on the same
+machine, decomposed the vendor roots that structurally supported it — `Program
+Files\Tencent` and `Program Files (x86)\Tencent`, `Roaming\baidu`,
+`Program Files (x86)\Thunder Network`, `Program Files\Oray`, and, outside the named
+set, `Program Files\Blender Foundation`, `Program Files\DAUM` and
+`Program Files\Softdeluxe` — leaving each product's own directory attributed at one
+level down. `Adobe`'s co-declared decomposition, `Steam`, and the Oxford publisher root
+are unchanged.
+
+Three cases did not change, each for a structural reason rather than a name list:
+`%LOCALAPPDATA%\Kingsoft` has only a launcher anchor below it, so it keeps the
+Task 07.6 verdict and remains a documented overclaim; `%LOCALAPPDATA%\Programs` is a
+generic container word, which Task 07.7 deliberately leaves unresolved; and
+`Program Files (x86)\Oxford University Press` is declared by its product as the exact
+install location, so it is a genuine product root under the existing rule.
+
+No threshold was retuned, no evidence source was added, and no product name, alias
+table or generic-word blacklist appears in production decisions.

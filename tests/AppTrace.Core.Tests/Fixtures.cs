@@ -13,7 +13,8 @@ internal static class Fixtures
         string? publisher = null,
         string? installLocation = null,
         string? version = null,
-        string? id = null)
+        string? id = null,
+        string? productCode = "{0000-0000}")
         => new()
         {
             Id = id ?? "app-" + TextNormalizer.Fold(displayName),
@@ -24,7 +25,7 @@ internal static class Fixtures
             Version = version,
             InstallLocation = installLocation,
             NormalizedInstallLocation = installLocation is null ? null : TextNormalizer.NormalizePath(installLocation),
-            ProductCode = "{0000-0000}",
+            ProductCode = productCode,
             RegistrySource = @"HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\Test",
             RegistryRoot = RegistryRootKind.LocalMachine64,
         };

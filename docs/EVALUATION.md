@@ -245,6 +245,62 @@ together with the Task 07.6 corrections they motivated.
 
 ---
 
+## Scans are current-state snapshots
+
+A scan is an **independent snapshot of the machine as it exists at that moment**:
+
+```text
+Scan T1  ->  filesystem / registry / provenance observed at T1  ->  Report T1
+
+             machine changes
+
+Scan T2  ->  filesystem / registry / provenance observed at T2  ->  Report T2
+```
+
+The attribution engine must not use T1 as evidence for T2. Every verdict is derived
+from what the current scan observed and nothing else — no remembered owner, no
+"this was installed last time". Previous scans may be used *externally* to evaluate a
+change, but they are **comparison data, not hidden ownership evidence**.
+
+## Historical scans are future scope
+
+Historical scan data is not part of the current model, and no task so far has
+introduced it.
+
+> Historical scan data, if introduced later, must be modeled as an explicit
+> provenance source with its own staleness, conflict, and lifecycle semantics.
+
+The shape it would eventually serve is easy to picture — an application uninstalled
+between two scans whose directory remains is an obvious orphan candidate:
+
+```text
+T1:  App X installed,  directory X exists
+T2:  App X uninstalled, directory X remains
+```
+
+Recognising that reliably needs a defined lifetime for the observation, a defined
+answer when the two scans disagree, and a defined meaning for a stale row belonging to
+something no longer installed. Until those exist, historical knowledge must never
+silently contaminate current-state ownership.
+
+## Comparing two scans honestly
+
+The machine may change between scans — the user may be actively freeing disk space —
+so a before/after comparison has to separate two different causes:
+
+```text
+engine-caused classification change        <- what the change is being judged on
+underlying filesystem population change    <- what the machine did on its own
+```
+
+Do not credit an engine change merely because `UNKNOWN` bytes fell, total bytes fell,
+or a directory disappeared. When a path exists in only one of the two scans, report it
+as a **machine-state difference** and do not attribute it to the change under
+evaluation. The honest reading is narrower: for paths present in *both* scans, did the
+verdict change, and did it become more or less correct?
+
+---
+
 ## What this harness does not do
 
 * It does not change attribution behaviour. During Task 03 the production code was

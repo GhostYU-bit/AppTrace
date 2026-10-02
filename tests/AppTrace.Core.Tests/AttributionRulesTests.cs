@@ -607,6 +607,188 @@ public class AttributionRulesTests
                 or EvidenceType.DataRootProductBoundary);
     }
 
+    // ---- Single-product vendor namespaces (Task 07.7) ---------------------
+
+    [Fact]
+    public void VendorNamespaceWithOneInstalledProduct_IsNotOwnedByThatProduct()
+    {
+        // The field case this task exists for: only one product from the publisher is
+        // installed, and it declares a boundary below the vendor directory. The
+        // vendor directory is a namespace, not the product's root, so nothing may be
+        // established there and the scan has to descend.
+        var app = Fixtures.App("ProductA", "Vendorco", @"C:\Program Files\Vendor\ProductA");
+
+        var provenance = new ProvenanceIndex(
+        [
+            Anchor(app.Id, @"C:\Program Files\Vendor\ProductA\ProductA.exe"),
+        ]);
+
+        var attribution = Fixtures.Evaluate(@"C:\Program Files\Vendor", [app], provenance: provenance);
+
+        Assert.False(attribution.OwnershipEstablished);
+        Assert.Contains("single-product vendor namespace", attribution.StopReason, StringComparison.Ordinal);
+
+        var owner = Fixtures.Candidate(attribution, "ProductA");
+        Assert.NotNull(owner);
+        Assert.True(owner.Accepted);
+        Assert.NotEqual(Classification.Confirmed, owner.Classification);
+        Assert.DoesNotContain(owner.Evidence, e => e.Type == EvidenceType.DeclaredInstallLocation);
+    }
+
+    [Fact]
+    public void VendorNamespaceSemantics_DoNotDependOnASiblingProductBeingInstalled()
+    {
+        // The central acceptance criterion: identical evidence for Product A must
+        // produce the same boundary whether or not Product B from the same publisher
+        // happens to be installed. Only the number of plausible owners may differ.
+        var a = Fixtures.App("ProductA", "Contoso Ltd.", @"C:\Program Files\Vendor\ProductA");
+        var b = Fixtures.App("ProductB", "Contoso Ltd.", @"C:\Program Files\Vendor\ProductB");
+
+        var onlyA = Fixtures.Evaluate(
+            @"C:\Program Files\Vendor",
+            [a],
+            provenance: new ProvenanceIndex(
+            [
+                Anchor(a.Id, @"C:\Program Files\Vendor\ProductA\ProductA.exe"),
+            ]));
+
+        var both = Fixtures.Evaluate(
+            @"C:\Program Files\Vendor",
+            [a, b],
+            provenance: new ProvenanceIndex(
+            [
+                Anchor(a.Id, @"C:\Program Files\Vendor\ProductA\ProductA.exe"),
+                Anchor(b.Id, @"C:\Program Files\Vendor\ProductB\ProductB.exe"),
+            ]));
+
+        Assert.False(onlyA.OwnershipEstablished);
+        Assert.False(both.OwnershipEstablished);
+        Assert.Contains("single-product vendor namespace", onlyA.StopReason, StringComparison.Ordinal);
+        Assert.Contains("single-product vendor namespace", both.StopReason, StringComparison.Ordinal);
+        Assert.False(onlyA.Classification.IsConfident());
+        Assert.False(both.Classification.IsConfident());
+
+        // Product A's own evidence is untouched by Product B's existence.
+        Assert.Equal(
+            Fixtures.Candidate(onlyA, "ProductA")!.Evidence.Count(e => e.SupportsAttribution),
+            Fixtures.Candidate(both, "ProductA")!.Evidence.Count(e => e.SupportsAttribution));
+    }
+
+    [Fact]
+    public void ProductWhoseOwnIdentityIsItsDirectory_KeepsNormalOwnership()
+    {
+        // A genuine product root protected two ways: the directory names the product
+        // itself, and the product registers this exact directory as its install
+        // location. Having files in a subdirectory does not turn it into a namespace.
+        var app = Fixtures.App("ProductA", "Vendorco", @"C:\Program Files\ProductA");
+
+        var provenance = new ProvenanceIndex(
+        [
+            Anchor(app.Id, @"C:\Program Files\ProductA\Secondary\ProductA.exe"),
+        ]);
+
+        var attribution = Fixtures.Evaluate(@"C:\Program Files\ProductA", [app], provenance: provenance);
+
+        Assert.True(attribution.OwnershipEstablished);
+        Assert.Equal(Classification.Confirmed, attribution.Classification);
+    }
+
+    [Fact]
+    public void ProductNamedByItsProductCode_KeepsItsRootWhenItsProgramIsOneLevelDown()
+    {
+        // The counterpart to the field case above, and the one a real scan found:
+        // an application whose display name is not written in the same alphabet as
+        // its directory, whose program folder sits inside its own directory. The
+        // layout is structurally identical to a vendor namespace — only identity
+        // separates them, and here identity is the product code.
+        var app = Fixtures.App("产品", "Vendor Co.", productCode: "Doubao");
+
+        var provenance = new ProvenanceIndex(
+        [
+            Anchor(app.Id, @"C:\Users\User\AppData\Local\Doubao\Application\icon.ico"),
+        ]);
+
+        var attribution = Fixtures.Evaluate(
+            @"C:\Users\User\AppData\Local\Doubao",
+            [app],
+            LocationCategory.LocalAppData,
+            provenance: provenance);
+
+        Assert.DoesNotContain("vendor namespace", attribution.StopReason, StringComparison.Ordinal);
+        Assert.True(attribution.OwnershipEstablished);
+    }
+
+    [Fact]
+    public void UpdaterAnchorBelowAVendorRoot_DoesNotProveANamespace()
+    {
+        // An updater is weak infrastructure: it shows the application reaches the
+        // path, not that its product boundary is there. Only the product's own
+        // executable may make the directory above it a namespace.
+        var app = Fixtures.App("ProductA", "Vendorco");
+
+        var updater = Fixtures.Evaluate(
+            @"C:\Program Files\Vendor",
+            [app],
+            provenance: new ProvenanceIndex(
+            [
+                Anchor(app.Id, @"C:\Program Files\Vendor\ProductA\ProductAUpdater.exe", role: ExecutableRole.Updater),
+            ]));
+
+        Assert.DoesNotContain("vendor namespace", updater.StopReason, StringComparison.Ordinal);
+
+        var main = Fixtures.Evaluate(
+            @"C:\Program Files\Vendor",
+            [app],
+            provenance: new ProvenanceIndex(
+            [
+                Anchor(app.Id, @"C:\Program Files\Vendor\ProductA\ProductA.exe"),
+            ]));
+
+        Assert.Contains("single-product vendor namespace", main.StopReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StagingChildBelowAVendorRoot_DoesNotProveANamespace()
+    {
+        // "Vendor\Updater" and "Vendor\cache" are infrastructure rather than a
+        // product boundary. The existing structural vocabulary refuses them, so no
+        // word list has to be extended to say so.
+        var app = Fixtures.App("ProductA", "Vendorco");
+
+        foreach (var child in new[] { "Updater", "cache", "1.2.3" })
+        {
+            var attribution = Fixtures.Evaluate(
+                @"C:\Program Files\Vendor",
+                [app],
+                provenance: new ProvenanceIndex(
+                [
+                    Anchor(app.Id, $@"C:\Program Files\Vendor\{child}\ProductA.exe"),
+                ]));
+
+            Assert.DoesNotContain("vendor namespace", attribution.StopReason, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void GenericContainerName_IsNotTurnedIntoAVendorNamespace()
+    {
+        // Task 07.7 deliberately leaves "C:\Program Files\Programs -> one product"
+        // unresolved. A generic container word names no publisher, so the rule does
+        // not apply to it, and no word list may be extended to make it apply. The
+        // remaining overclaim is a documented future problem, not a regression.
+        var app = Fixtures.App("Generic Host", "Genericco");
+
+        var attribution = Fixtures.Evaluate(
+            @"C:\Program Files\Programs",
+            [app],
+            provenance: new ProvenanceIndex(
+            [
+                Anchor(app.Id, @"C:\Program Files\Programs\Generic Host\GenericHost.exe"),
+            ]));
+
+        Assert.DoesNotContain("vendor namespace", attribution.StopReason, StringComparison.Ordinal);
+    }
+
     /// <summary>An independently linked registration of one executable path.</summary>
     private static ProvenanceAnchor Anchor(
         string appId,

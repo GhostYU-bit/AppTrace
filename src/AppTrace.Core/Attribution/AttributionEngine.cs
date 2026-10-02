@@ -178,6 +178,18 @@ public sealed class AttributionEngine
     /// </summary>
     private readonly Discovery.ProvenanceIndex _provenance;
 
+    /// <summary>
+    /// The directories each application's own executables are registered in, for
+    /// the anchors whose role shows the product itself rather than its updater,
+    /// uninstaller, launcher or helper.
+    /// </summary>
+    /// <remarks>
+    /// Task 07.7 asks "does this application's product boundary lie below this
+    /// directory" for every directory at the top of the scan, so the answer is
+    /// precomputed once rather than rescanned per directory.
+    /// </remarks>
+    private readonly Dictionary<string, List<string>> _productAnchorDirectories = new(StringComparer.Ordinal);
+
     private readonly AttributionOptions _options;
     private readonly Dictionary<string, ExecutableProbe> _executableProbeCache = new(StringComparer.OrdinalIgnoreCase);
     private int _executableProbes;
@@ -227,6 +239,29 @@ public sealed class AttributionEngine
             if (publisherToken.Length >= MinimumUsefulTokenLength)
             {
                 AddToIndex(_appsByPublisherToken, publisherToken, app);
+            }
+        }
+
+        // A product's own executable is what shows where its boundary is. Its
+        // updater, uninstaller, launcher or helper only shows that it reaches the
+        // path, which is why none of them may prove that a vendor directory has the
+        // product below it.
+        foreach (var anchor in _provenance.Anchors)
+        {
+            if (anchor.Role != Discovery.ExecutableRole.MainApplication || anchor.Directory.Length == 0)
+            {
+                continue;
+            }
+
+            if (!_productAnchorDirectories.TryGetValue(anchor.AppId, out var directories))
+            {
+                directories = [];
+                _productAnchorDirectories[anchor.AppId] = directories;
+            }
+
+            if (!directories.Contains(anchor.Directory, StringComparer.Ordinal))
+            {
+                directories.Add(anchor.Directory);
             }
         }
 
@@ -1910,10 +1945,11 @@ public sealed class AttributionEngine
     /// </summary>
     /// <remarks>
     /// A container is a directory that several installed products name as their
-    /// install root, or that is named after a publisher several installed products
-    /// share. Neither shape says which product owns what is below it, so a
-    /// container is never established for a single product: the per-product
-    /// boundary lives further down, and the scan has to keep descending to find it.
+    /// install root, that is named after a publisher several installed products
+    /// share, or whose product boundary demonstrably lies below it. None of those
+    /// shapes says which product owns what is below the directory, so a container
+    /// is never established for a single product: the per-product boundary lives
+    /// further down, and the scan has to keep descending to find it.
     /// </remarks>
     private readonly record struct ContainerBoundary(
         bool IsContainer,
@@ -1925,8 +1961,10 @@ public sealed class AttributionEngine
     }
 
     /// <summary>
-    /// Recognises the two generic container shapes: a co-declared install root and
-    /// a shared vendor namespace.
+    /// Recognises the container shapes: a co-declared install root, a shared
+    /// vendor namespace, and — since Task 07.7 — a vendor namespace whose product
+    /// boundary demonstrably lies below it even though only one product from that
+    /// publisher is currently installed.
     /// </summary>
     /// <remarks>
     /// Deliberately name-independent for the co-declared case. Which products
@@ -1956,7 +1994,148 @@ public sealed class AttributionEngine
             return new ContainerBoundary(true, declaring, "vendor namespace");
         }
 
+        // The single-product form of the same defect. How many siblings happen to
+        // be installed today must not decide whether this directory is a namespace,
+        // so the shape is derived from structure instead. It applies only when no
+        // product claims this exact directory: a directory a product does register
+        // as its install location is that product's root, whatever it is called.
+        if (declaring.Count == 0 && HasProductBoundaryBelow(input))
+        {
+            return new ContainerBoundary(true, declaring, "single-product vendor namespace");
+        }
+
         return ContainerBoundary.None;
+    }
+
+    /// <summary>
+    /// True when an installed application's own product boundary is demonstrably
+    /// below this directory, which makes the directory a namespace rather than any
+    /// one product's root.
+    /// </summary>
+    /// <remarks>
+    /// <para>Evidence-based rather than name-based. A directory called
+    /// <c>Tencent</c> is not a namespace because of the word, and it is not a
+    /// namespace because two Tencent products happen to be installed; it is a
+    /// namespace because a registered product's own files begin one level further
+    /// down. That statement does not change when a sibling is installed or
+    /// removed, which is the whole point of the rule.</para>
+    /// <para>Reusing the existing model rather than adding one: the descendant must
+    /// pass <see cref="GenericDirectoryNames.CanIdentifyAProduct"/> and be
+    /// <see cref="StructureKind.Unknown"/> to <see cref="PathSemantics"/>, and the
+    /// provenance channel accepts only anchors whose role is the product's own
+    /// executable.</para>
+    /// <para>A directory that is one of the application's own names is excluded from
+    /// the start, so a product whose program lives in a subfolder of its own
+    /// identically named directory keeps its root. Without that exclusion the two
+    /// shapes are indistinguishable from structure alone.</para>
+    /// </remarks>
+    private bool HasProductBoundaryBelow(AttributionInput input)
+    {
+        // A vendor namespace is a directory directly inside a scan root. Deeper
+        // directories are product internals, and a meaningful-looking folder inside
+        // one says nothing about the directory above it being shared.
+        if (input.Depth != 1 || !GenericDirectoryNames.CanIdentifyAProduct(input.DirectoryName))
+        {
+            return false;
+        }
+
+        var directoryToken = TextNormalizer.Fold(input.DirectoryName);
+        if (directoryToken.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var app in _apps)
+        {
+            // The directory names this product, so it is the product's own root
+            // however its files are laid out inside it. That includes the case where
+            // the product's own program folder sits one level down — the shape looks
+            // like a vendor namespace structurally, and only this identity check
+            // tells the two apart.
+            if (NamesTheProduct(directoryToken, app))
+            {
+                continue;
+            }
+
+            foreach (var location in ProductSpecificLocationsOf(app))
+            {
+                if (MeaningfulChildBelow(input.NormalizedPath, location) is not null)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// True when a directory name is one of the application's own product
+    /// identities, which makes the directory that product's root rather than a
+    /// namespace other products share.
+    /// </summary>
+    /// <remarks>
+    /// Both forms are checked because either can be the name that matches. The
+    /// display name is what a user sees; the product code is the identity the
+    /// uninstall entry is registered under, and for an application whose display
+    /// name is not written in Latin script the code is frequently the only place its
+    /// name appears in the same alphabet as the directory. Since the directory is
+    /// literally one of the application's own names, no other product can be what it
+    /// is named after.
+    /// </remarks>
+    private static bool NamesTheProduct(string directoryToken, AppIdentity app) =>
+        string.Equals(directoryToken, TextNormalizer.Fold(app.NormalizedName), StringComparison.Ordinal)
+        || (app.ProductCode is { Length: > 0 } code
+            && string.Equals(directoryToken, TextNormalizer.Fold(code), StringComparison.Ordinal));
+
+    /// <summary>
+    /// The paths that show where an application's own product boundary is: the
+    /// directory Windows registers as its install location, and the directories its
+    /// own executables are anchored in.
+    /// </summary>
+    private IEnumerable<string> ProductSpecificLocationsOf(AppIdentity app)
+    {
+        if (app.NormalizedInstallLocation is { Length: > 0 } install)
+        {
+            yield return install;
+        }
+
+        if (_productAnchorDirectories.TryGetValue(app.Id, out var directories))
+        {
+            foreach (var directory in directories)
+            {
+                yield return directory;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The first segment below <paramref name="normalizedDirectory"/> when the
+    /// location is a true descendant of it and that segment could name a product,
+    /// or null when it cannot serve as structural proof.
+    /// </summary>
+    /// <remarks>
+    /// The descendant has to be <em>meaningful</em>: <c>Vendor\cache</c> and
+    /// <c>Vendor\updater</c> are content or infrastructure rather than a product
+    /// boundary, and a version-numbered child is a layout detail. Both are refused
+    /// by the existing structural vocabulary and the existing generic-name rule,
+    /// not by a new list of words.
+    /// </remarks>
+    private static string? MeaningfulChildBelow(string normalizedDirectory, string normalizedLocation)
+    {
+        if (!normalizedLocation.StartsWith(normalizedDirectory + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var remainder = normalizedLocation[(normalizedDirectory.Length + 1)..];
+        var separator = remainder.IndexOf(Path.DirectorySeparatorChar);
+        var child = separator < 0 ? remainder : remainder[..separator];
+
+        return GenericDirectoryNames.CanIdentifyAProduct(child)
+            && PathSemantics.StructureOf(child) == StructureKind.Unknown
+            ? child
+            : null;
     }
 
     private (List<CandidateOwner> Candidates, bool Established, string Reason) DecideOwnership(
@@ -2024,8 +2203,8 @@ public sealed class AttributionEngine
         if (container.IsContainer)
         {
             return (decided, false,
-                $"Directory is a {container.Kind} shared by {acceptedOwners.Count} installed application(s); " +
-                "descending to find the per-product boundaries.");
+                $"Directory is a {container.Kind} for {acceptedOwners.Count} installed application(s); " +
+                "the per-product boundary lies below it, so the scan descends to find it.");
         }
 
         if (acceptedOwners.Count == 1)

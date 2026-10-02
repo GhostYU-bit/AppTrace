@@ -70,7 +70,8 @@ Detectors, in this fixed order
         6. Publisher / vendor namespace
         7. Context                        (parent / child / known-application path)
         8. Executable metadata
-        9. Bounding                       (shared / conflicting / system-managed)
+        9. Binary signer                  (embedded Authenticode certificate)
+       10. Bounding                       (shared / conflicting / system-managed)
         ↓
 Candidate generation                       (BuildCandidates: score, sort, cap)
         ↓
@@ -131,7 +132,7 @@ explicit and auditable.
 
 | Kind | Evidence types (¹ = reserved, see below) |
 | --- | --- |
-| **Identity** | `ExactDirectoryNameMatch`, `NormalizedNameMatch`, `ExecutableMetadataMatch` |
+| **Identity** | `ExactDirectoryNameMatch`, `NormalizedNameMatch`, `ExecutableMetadataMatch`, `SignerPublisherMatch` |
 | **Provenance** | `DeclaredInstallLocation`, `InstallLocationMatch`, `InheritedFromOwner`, `DisplayIconMatch`, `ProvenanceAnchorMatch`, `DiscoveryLocationMatch`¹, `ProductCodeMatch`¹, `RegistryReference`¹ |
 | **Structure** | `KnownApplicationPath`, `DataRootProductBoundary`, `KnownPublisherNamespace`, `ParentDirectoryMatch`, `MultipleCandidateOwners`, `SharedPublisherDirectory`, `PublisherMatch`, `ChildDirectoryMatch`¹, `GenericDirectoryName`¹ |
 | **Relationship** | `SubjectNameMatch`, `UnknownApplication`¹ |
@@ -148,6 +149,10 @@ Three placements are deliberate judgement calls:
 * **`SubjectNameMatch` is Relationship and is never scored**, which is what keeps
   "the container owns this; product B is its subject" from decaying into "B owns
   this".
+* **`SignerPublisherMatch` is Identity but is deliberately excluded from the
+  identity records that can corroborate provenance into `HIGH`** (§10.1). It is
+  Identity because it describes what a binary *appears* to be published by, and it
+  must never behave like a product name (§3.6).
 
 ¹ **Reserved:** the type, kind and weight are defined, but no production detector
 emits it yet, so it never appears in a real attribution. Reserved types are
@@ -187,6 +192,7 @@ choice, because Identity alone can never reach HIGH.
 | `ExactDirectoryNameMatch` | +40 | Identity |
 | `ExecutableMetadataMatch` | +40 | Identity |
 | `NormalizedNameMatch` | +30 | Identity |
+| `SignerPublisherMatch` | +25 | Identity |
 | `InheritedFromOwner` | +18 | Provenance |
 | `PublisherMatch` | +15 | Structure |
 | `ParentDirectoryMatch` | +12 | Structure |
@@ -228,6 +234,45 @@ A contradiction's **`ContradictionKind`** decides how it argues:
   be `UNKNOWN` in one view and owned in another. Only `PublisherMismatch` is emitted
   today; the other two are implemented and tested gates awaiting a detector.
 * **Limiting** (everything else) only caps confidence through its weight.
+
+### 3.6 Binary signer evidence
+
+`SignerPublisherMatch` is the engine's second binary-content signal, alongside
+`ExecutableMetadataMatch`. It reads the publisher named by the representative
+executable's **embedded Authenticode certificate** (`AuthenticodeSigner`, via
+`X509Certificate.CreateFromSignedFile`) and records it when it agrees with a
+candidate's publisher.
+
+It is deliberately the weakest binary identity record (+25) and is bounded by four
+rules:
+
+1. **It cannot propose a candidate.** It runs only against applications another
+   detector already proposed, and only when the candidate already carries an
+   `Identity` or `Provenance` record of its own. Publisher agreement adds to a
+   hypothesis; it never starts one.
+2. **It refuses when the publisher does not discriminate.** If more than one
+   proposed candidate carries the signer's publisher, no record is emitted.
+   A publisher signs many products, so agreement with "Adobe Inc." cannot choose
+   between two installed Adobe products. This is the `matching.Count != 1` rule in
+   `CollectSignerEvidence`.
+3. **It cannot raise a claim's ceiling.** It is excluded from the corroborating
+   identity set in §10.1, so publisher agreement can never turn provenance into
+   `HIGH`, and by extension can never establish ownership.
+4. **It cannot touch a boundary.** It is emitted only for a candidate at the
+   location being evaluated, never for a container, a vendor namespace, or an
+   ancestor, so `%LOCALAPPDATA%\Programs` and vendor roots remain structurally
+   non-exclusive (§6.4).
+
+**Absence is not opposition.** The fast path reads only *embedded* certificates; it
+does not verify a trust chain and does not consult catalog signatures. Windows signs
+many binaries by catalog, so "no embedded certificate observed" is recorded as
+nothing at all — never as `unsigned`, and never as a contradiction. Full
+`WinVerifyTrust` verification is deliberately *not* performed: its cost on a
+per-directory basis is not justified by the corroboration a signer provides.
+
+The certificate is read **on first use**, and only when a candidate already exists,
+rather than during inspection, so directories that produce no candidate pay nothing
+(§15).
 
 ---
 
@@ -601,7 +646,9 @@ score only orders and corroborates within it.
 `ExactDirectoryNameMatch`, `NormalizedNameMatch` or `ExecutableMetadataMatch` whose
 specificity reaches 0.50; Structure records (`KnownApplicationPath`,
 `DataRootProductBoundary`, `KnownPublisherNamespace`, `ParentDirectoryMatch`,
-`ChildDirectoryMatch`) can never raise a claim.
+`ChildDirectoryMatch`) can never raise a claim, and `SignerPublisherMatch` is
+excluded on purpose (§3.6): a publisher agreeing is corroboration, and a publisher
+is not a product.
 
 ### 10.2 Per location
 
@@ -753,6 +800,7 @@ FileInfo.Length                         read size
 File.GetAttributes()                    read attributes
 Directory.EnumerateFiles(..., "*.exe")  enumerate
 FileVersionInfo.GetVersionInfo()        read version resource
+X509Certificate.CreateFromSignedFile()  read embedded certificate
 ```
 
 There is no `Delete`, `Move`, `Create`, `Write`, `Rename`, `SetAttributes`, no
@@ -770,7 +818,9 @@ Additional guarantees:
   `ScanError` with a stage, and the affected size is a floor, not a fact.
 * **Budgets bound the work.** 120 000 directories, 4 000 000 files, 500 executable
   probes, and a configurable attribution depth (default 6). Budget exhaustion is
-  surfaced as a warning, never swallowed.
+  surfaced as a warning, never swallowed. The signer is read lazily from that same
+  cached probe, and only when a candidate already exists, so it adds no probe of its
+  own and costs nothing on directories that produce no candidate.
 
 ---
 
@@ -842,7 +892,13 @@ The current automated expectations include at least:
 corpus wrong-owner HIGH/CONFIRMED:  0 / 4
 Task 05 generic-token false-positive family:  still refused
 DaVinci/Electron:  must not become Git-owned
+signer:  cannot propose a candidate, cannot choose among same-publisher products,
+         cannot claim a generic container, and absence is never a contradiction
 ```
+
+The signer expectations are covered by `SignerEvidenceTests`, which drive the source
+through the engine's probe override rather than a real signed binary, so they are
+machine-independent like the corpus.
 
 Because the machine may change between scans, evaluation must keep distinguishing
 engine-caused changes from machine-state changes (§14).
@@ -857,15 +913,21 @@ name/path guessing. A new heuristic after this milestone requires a concrete
 reproducible failure family and regression justification.
 
 The non-goals that follow from this — none of which the current engine implements —
-are: Authenticode/signer attribution, MSIX/`PackageFamilyName` attribution,
-Steam/Epic manifests, runtime observation (ETW/USN), historical attribution, orphan
-detection, and any product-specific alias or path database. AppTrace is not a system
-cleaner; deletion and cleanup are out of scope.
+are: MSIX/`PackageFamilyName` attribution, Steam/Epic manifests, runtime observation
+(ETW/USN), historical attribution, orphan detection, and any product-specific alias or
+path database. Authenticode *verification* remains out of scope too: only the embedded
+certificate's publisher is read, as bounded corroboration (§3.6), never trust-chain
+verification or a signer-to-directory mapping. AppTrace is not a system cleaner;
+deletion and cleanup are out of scope.
 
-The recommended next evidence source is **MSIX/`PackageFamilyName` attribution**, or
-alternatively **Authenticode signer evidence**: both are independent of path naming,
-and both target the two largest known UNKNOWN families (unattributed per-product data
-trees and publisher-level roots) without touching the heuristic layer.
+Signer evidence was added in Task 09 as exactly this kind of source — publisher-level
+corroboration only. It changed no verdict on the field baseline, which is the expected
+outcome for a source that is deliberately barred from establishing ownership.
+
+The recommended next evidence source is **MSIX/`PackageFamilyName` attribution**, which
+is independent of path naming and targets the largest known UNKNOWN family
+(unattributed per-product data trees and package payloads) without touching the
+heuristic layer.
 
 ---
 

@@ -7,10 +7,12 @@ using System.Runtime.Versioning;
 /// Version metadata read from a representative executable inside a directory.
 /// </summary>
 /// <remarks>
-/// Binary metadata is the only signal that comes from file content
-/// rather than from a name. It is used the way Bulk Crap Uninstaller uses
-/// CompanyName/ProductName matching: as corroboration, never as proof, and only
-/// from a small bounded number of files per scan.
+/// This is the only signal that comes from file content rather than from a name.
+/// Version metadata is used the way Bulk Crap Uninstaller uses
+/// CompanyName/ProductName matching — as corroboration, never as proof — and the
+/// embedded signer names a publisher, which corroborates at publisher level only.
+/// Both are read from a small bounded number of files per scan, and both describe
+/// the binary rather than the directory that contains it.
 /// </remarks>
 [SupportedOSPlatform("windows")]
 public sealed class ExecutableProbe
@@ -23,6 +25,10 @@ public sealed class ExecutableProbe
         "dotnetfx.exe", "python.exe", "node.exe", "crashpad_handler.exe",
     };
 
+    private Func<string?>? _signerReader;
+    private string? _signerPublisher;
+    private bool _signerResolved;
+
     private ExecutableProbe()
     {
     }
@@ -31,7 +37,53 @@ public sealed class ExecutableProbe
 
     public string? ExecutablePath { get; private init; }
 
+    /// <summary>
+    /// Publisher named by the executable's embedded Authenticode certificate, or
+    /// <see langword="null"/> when no embedded certificate was observed.
+    /// </summary>
+    /// <remarks>
+    /// <para>Absence is "not observed", never "unsigned": Windows signs many
+    /// binaries by catalog rather than by embedding a certificate, so this value
+    /// must not be read as a negative signal.</para>
+    /// <para>It describes the <em>binary</em>, not the directory containing it, so
+    /// it is used only as publisher-level corroboration and never as proof that the
+    /// directory belongs to that publisher's product.</para>
+    /// <para><b>The certificate is read on first use, not on inspection.</b> The
+    /// signer only matters when a candidate already exists, and reading it costs
+    /// roughly one Win32 call per binary, so deferring it keeps the extra work off
+    /// the directories that produce no candidate at all. It is resolved at most
+    /// once per probe.</para>
+    /// </remarks>
+    public string? SignerPublisher
+    {
+        get
+        {
+            if (!_signerResolved)
+            {
+                _signerPublisher = _signerReader?.Invoke();
+                _signerResolved = true;
+            }
+
+            return _signerPublisher;
+        }
+    }
+
     public bool IsEmpty => Fields.Count == 0;
+
+    /// <summary>
+    /// Builds a probe with known contents, so the signer and metadata rules can be
+    /// tested without a filesystem or a signed binary.
+    /// </summary>
+    internal static ExecutableProbe ForTesting(
+        IReadOnlyList<KeyValuePair<string, string>> fields,
+        string? signerPublisher,
+        string? executablePath = null)
+    {
+        var probe = new ExecutableProbe { Fields = fields, ExecutablePath = executablePath };
+        probe._signerPublisher = signerPublisher;
+        probe._signerResolved = true;
+        return probe;
+    }
 
     /// <summary>
     /// Inspects at most one executable directly inside <paramref name="directory"/>.
@@ -74,11 +126,15 @@ public sealed class ExecutableProbe
             AddField(fields, "CompanyName", info.CompanyName);
             AddField(fields, "InternalName", info.InternalName);
 
-            return new ExecutableProbe { Fields = fields, ExecutablePath = candidate };
+            var probe = new ExecutableProbe { Fields = fields, ExecutablePath = candidate };
+            probe._signerReader = () => AuthenticodeSigner.ReadPublisher(candidate);
+            return probe;
         }
         catch (Exception e) when (Scanning.DirectoryWalker.IsRecoverable(e))
         {
-            return new ExecutableProbe { ExecutablePath = candidate };
+            var probe = new ExecutableProbe { ExecutablePath = candidate };
+            probe._signerReader = () => AuthenticodeSigner.ReadPublisher(candidate);
+            return probe;
         }
     }
 

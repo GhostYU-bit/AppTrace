@@ -28,6 +28,14 @@ public static class EvidenceClassification
         EvidenceType.NormalizedNameMatch => EvidenceKind.Identity,
         EvidenceType.ExecutableMetadataMatch => EvidenceKind.Identity,
 
+        // A binary's embedded signer names a publisher, which is weaker than a
+        // product name: a publisher can sign many products, and signing a binary
+        // says nothing about the directory containing it. It is Identity because it
+        // corroborates a candidate's publisher, and it is deliberately excluded from
+        // the identity records that may corroborate a provenance anchor into a HIGH
+        // claim, so it can never lift publisher agreement to ownership.
+        EvidenceType.SignerPublisherMatch => EvidenceKind.Identity,
+
         // ---- Provenance: is the application independently anchored here? -------
         // All four are written by the application's own installation or by another
         // component that registered this path for it. These are the only records

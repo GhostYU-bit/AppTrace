@@ -68,6 +68,39 @@ internal static class Fixtures
     }
 
     /// <summary>
+    /// Evaluates a path with a caller-supplied binary probe, so the signer and
+    /// metadata rules can be exercised without a filesystem or a signed binary.
+    /// </summary>
+    /// <remarks>
+    /// The probe override is still bounded and cached by the engine exactly like the
+    /// real probe, so a test cannot make the binary detectors behave differently from
+    /// production beyond the values it supplies.
+    /// </remarks>
+    public static LocationAttribution EvaluateWithProbe(
+        string path,
+        IReadOnlyList<AppIdentity> apps,
+        Func<string, ExecutableProbe> probeOverride,
+        LocationCategory category = LocationCategory.ProgramFiles,
+        IReadOnlyList<OwnedAncestor>? ownedAncestors = null)
+    {
+        var engine = new AttributionEngine(
+            apps,
+            new AttributionOptions { MaxExecutableProbes = 8, ProbeOverride = probeOverride });
+        var normalized = TextNormalizer.NormalizePath(path);
+
+        return engine.Evaluate(new AttributionInput
+        {
+            Path = path,
+            NormalizedPath = normalized,
+            DirectoryName = Path.GetFileName(normalized.TrimEnd(Path.DirectorySeparatorChar)),
+            Category = category,
+            OwnedAncestors = ownedAncestors ?? [],
+            NormalizedScanRoot = ScanRootFor(normalized, category),
+            Depth = DepthBelowRoot(normalized, category),
+        });
+    }
+
+    /// <summary>
     /// Evaluates a path as the child of an ancestor whose ownership is established.
     /// </summary>
     /// <remarks>

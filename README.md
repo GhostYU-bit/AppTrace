@@ -47,8 +47,9 @@ baseline. Attribution Engine V2 is the current, frozen architecture: the evidenc
 model and confidence semantics, the filesystem semantic layer, the
 ownership/relationship model, and the static provenance sources (App Paths,
 services, scheduled tasks, Run keys, shortcuts and uninstall `DisplayIcon` values)
-are implemented. Authenticode signer attribution and MSIX package mapping are not
-yet integrated, and are the recommended next evidence sources.
+are implemented, plus the publisher named by a binary's embedded Authenticode
+certificate as bounded corroboration. MSIX package mapping is not yet integrated and
+is the recommended next evidence source.
 
 Expect, in particular:
 

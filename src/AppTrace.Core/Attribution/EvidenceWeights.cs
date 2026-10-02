@@ -71,6 +71,12 @@ public static class EvidenceWeights
         EvidenceType.ExecutableMetadataMatch => 40,
         EvidenceType.NormalizedNameMatch => 30,
 
+        // A binary's embedded signer (Task 09) names a publisher, not a product, so
+        // it is worth less than any product-name identity record and cannot by
+        // itself cross the score at which a subtree closes. It exists to rank and
+        // corroborate a candidate the name or provenance already proposed.
+        EvidenceType.SignerPublisherMatch => 25,
+
         // Structure: describes the location, never the owner.
         // KnownApplicationPath is deliberately worth nothing. Being under
         // AppData\Local, AppData\Roaming, LocalLow or Program Files says that

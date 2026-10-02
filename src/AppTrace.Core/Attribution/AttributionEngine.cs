@@ -295,6 +295,7 @@ public sealed class AttributionEngine
         CollectPublisherEvidence(input, evidenceByApp);
         CollectContextEvidence(input, evidenceByApp);
         CollectExecutableMetadataEvidence(input, evidenceByApp);
+        CollectSignerEvidence(input, evidenceByApp);
         AddBoundingEvidence(input, evidenceByApp);
 
         var candidates = BuildCandidates(evidenceByApp);
@@ -1449,19 +1450,9 @@ public sealed class AttributionEngine
         AttributionInput input,
         Dictionary<string, List<Evidence>> evidenceByApp)
     {
-        if (_executableProbes >= _options.MaxExecutableProbes)
-        {
-            return;
-        }
+        var binaryMetadata = ProbeFor(input.Path);
 
-        if (!_executableProbeCache.TryGetValue(input.Path, out ExecutableProbe? binaryMetadata))
-        {
-            _executableProbes++;
-            binaryMetadata = ExecutableProbe.Inspect(input.Path);
-            _executableProbeCache[input.Path] = binaryMetadata;
-        }
-
-        if (binaryMetadata.IsEmpty)
+        if (binaryMetadata is null || binaryMetadata.IsEmpty)
         {
             return;
         }
@@ -1504,6 +1495,106 @@ public sealed class AttributionEngine
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Corroborates a candidate whose publisher a binary in the directory is signed
+    /// by.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Publisher agreement is not product identity.</b> The embedded
+    /// signer names a publisher, and a publisher signs many products, so this
+    /// detector only ever <em>corroborates</em> a candidate another detector already
+    /// proposed. It cannot propose a candidate, cannot raise one to a HIGH claim
+    /// (see <c>ClassifyCandidate</c>), and cannot touch a container, a vendor
+    /// namespace or an ancestor.</para>
+    /// <para><b>It refuses when the publisher does not discriminate.</b> If more
+    /// than one proposed candidate carries that publisher, publisher agreement
+    /// cannot choose between them, and no record is emitted. This is the rule that
+    /// keeps "same signer publishes several installed products" from becoming a
+    /// product decision.</para>
+    /// <para><b>Absence is not opposition.</b> A binary with no embedded
+    /// certificate, or a directory with no executable at all, produces no record;
+    /// Windows signs through catalogs too, so "not observed" must never be read as
+    /// "unsigned".</para>
+    /// </remarks>
+    private void CollectSignerEvidence(
+        AttributionInput input,
+        Dictionary<string, List<Evidence>> evidenceByApp)
+    {
+        if (evidenceByApp.Count == 0)
+        {
+            return;
+        }
+
+        var signature = ProbeFor(input.Path)?.SignerPublisher;
+        if (string.IsNullOrWhiteSpace(signature))
+        {
+            return;
+        }
+
+        var signerPublisher = TextNormalizer.Fold(TextNormalizer.NormalizePublisher(signature));
+        if (signerPublisher.Length < MinimumUsefulTokenLength)
+        {
+            return;
+        }
+
+        // Only applications another detector already proposed, and that already
+        // carry substantive evidence of their own, may be corroborated. Publisher
+        // agreement adds to a hypothesis; it never starts one.
+        var matching = ProposedCandidates(evidenceByApp)
+            .Where(app => string.Equals(
+                TextNormalizer.Fold(app.NormalizedPublisher),
+                signerPublisher,
+                StringComparison.Ordinal))
+            .Where(app => evidenceByApp[app.Id].Any(e =>
+                e.SupportsAttribution
+                && e.Kind is EvidenceKind.Identity or EvidenceKind.Provenance))
+            .ToList();
+
+        // A publisher that matches more than one candidate cannot choose between
+        // them, so the signer stays silent rather than manufacturing a winner.
+        if (matching.Count != 1)
+        {
+            return;
+        }
+
+        var owner = matching[0];
+        Add(
+            evidenceByApp,
+            owner,
+            EvidenceType.SignerPublisherMatch,
+            EvidenceStrength.Moderate,
+            EvidenceSource.Authenticode,
+            $"A binary in this directory is signed by \"{signature}\", the publisher of \"{owner.DisplayName}\"; publisher agreement corroborates the candidate but does not own the directory.",
+            true);
+    }
+
+    /// <summary>
+    /// The bounded, cached binary probe for one directory, or <see langword="null"/>
+    /// when the probe budget is exhausted.
+    /// </summary>
+    /// <remarks>
+    /// Both binary-content detectors share this so the directory is enumerated and
+    /// the representative executable opened once, whatever number of signals is
+    /// read from it.
+    /// </remarks>
+    private ExecutableProbe? ProbeFor(string path)
+    {
+        if (_executableProbeCache.TryGetValue(path, out var cached))
+        {
+            return cached;
+        }
+
+        if (_executableProbes >= _options.MaxExecutableProbes)
+        {
+            return null;
+        }
+
+        _executableProbes++;
+        var probe = _options.ProbeOverride?.Invoke(path) ?? ExecutableProbe.Inspect(path);
+        _executableProbeCache[path] = probe;
+        return probe;
     }
 
     /// <summary>
@@ -2285,6 +2376,17 @@ public sealed class AttributionEngine
 /// <summary>Tunables for the attribution engine.</summary>
 public sealed class AttributionOptions
 {
-    /// <summary>Upper bound on executable metadata reads per scan.</summary>
+    /// <summary>Upper bound on binary probes (version metadata and signer) per scan.</summary>
     public int MaxExecutableProbes { get; init; } = 500;
+
+    /// <summary>
+    /// Overrides the binary probe, so tests can supply version metadata and an
+    /// embedded-signer publisher without a filesystem or a signed binary.
+    /// </summary>
+    /// <remarks>
+    /// Null, the default, reads the real file. The override is still bounded and
+    /// cached exactly like the real probe, so it cannot change the performance
+    /// contract it exists to test.
+    /// </remarks>
+    public Func<string, ExecutableProbe>? ProbeOverride { get; init; }
 }

@@ -105,7 +105,8 @@ src/
       AttributionEngine.cs       detectors, scoring, classification, stop decisions
       EvidenceWeights.cs         the explicit weight table
       GenericDirectoryNames.cs   names that may never carry ownership
-      ExecutableProbe.cs         bounded version-resource probe
+      ExecutableProbe.cs         bounded version-resource and signer probe
+      AuthenticodeSigner.cs      embedded-certificate publisher read
     Reporting/
       FootprintReport.cs         app-centric aggregation and totals
       TextReporter.cs            human-readable output, renders WHY from evidence
@@ -167,7 +168,7 @@ Evidence               one machine-readable reason
   Kind                 Identity / Provenance / Structure / Relationship / Contradiction
   Description          the specific values that matched
   Strength             Weak / Moderate / Strong / Decisive
-  Source               Registry / Filesystem / ExecutableMetadata / PathHeuristic / Derived
+  Source               Registry / Filesystem / ExecutableMetadata / Authenticode / PathHeuristic / Derived
   SupportsAttribution  false means this record argues against the claim
   Weight               signed contribution to Score
   Specificity          how much of a product's name a match accounts for
@@ -204,6 +205,7 @@ owners.
 | Shared vendor namespace | `PublisherMatch` / `SharedPublisherDirectory` | +15 / −18 |
 | Context | `KnownApplicationPath` / `ParentDirectoryMatch` / `ChildDirectoryMatch` | 0 / +12 / +10 |
 | Executable metadata | `ExecutableMetadataMatch` | +40 |
+| Binary signer | `SignerPublisherMatch` (embedded certificate publisher) | +25 |
 | Product code | `ProductCodeMatch` | +55 |
 | Registry cross-reference | `RegistryReference` (reserved) | +45 |
 | Bounding | `MultipleCandidateOwners` / `PublisherMismatch` / `ConflictingApplicationMatch` | −15 / −22 / −25 |

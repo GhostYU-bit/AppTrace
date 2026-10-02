@@ -244,6 +244,50 @@ the shared storefront root — are recorded in
 [ATTRIBUTION_HISTORY.md](ATTRIBUTION_HISTORY.md) together with the Task 07.6
 corrections they motivated.
 
+### Task 09 signer field evaluation
+
+Task 09 added `SignerPublisherMatch` (embedded Authenticode publisher, `Identity`,
++25). It leaves the two fixture baselines above **unchanged**, by construction: both
+run with executable probing disabled, so no signer is ever read there. The gates were
+re-measured afterwards and are identical:
+
+```text
+corpus wrong-owner HIGH/CONFIRMED       0 of 4   (unchanged)
+real-machine wrong-owner HIGH/CONFIRMED 1 of 15  (unchanged)
+```
+
+A read-only field probe over the executables the bounded probe would actually visit
+(`Program Files`, `Program Files (x86)`, `Local\Programs`) measured:
+
+```text
+candidate executables                     125
+embedded signer observed                  107  (86%)
+signer publisher shared by >1 installed
+  product (signer alone cannot choose)     32
+agreement with the directory's registered
+  application publisher                  11 agree / 29 disagree / 67 no app claim
+cost per read                             ~2.4 ms warm, ~7 ms cold
+```
+
+The disagreements are the expected ones and are *correct* behaviour: a localized
+publisher name (`北京春田知韵科技有限公司` versus the registry's English name), a
+subset (`Stichting Blender Foundation` versus `Blender Foundation`), and an
+individual signer (`Johannes Schindelin` for Git, whose registered publisher is
+`The Git Development Community`). Strict normalized equality deliberately refuses all
+three rather than bridging them — the source under-claims by design.
+
+A/B evaluation of 424 real directories with the signer stripped from the same probe
+versus present:
+
+```text
+signer records emitted                   22
+directories whose verdict changed         0
+```
+
+No ownership or classification changed, which is the expected result for a source that
+is barred from establishing ownership and from choosing among same-publisher products.
+Task 09 is therefore justified by **explainable corroboration**, not by recall.
+
 ---
 
 ## Scans are current-state snapshots

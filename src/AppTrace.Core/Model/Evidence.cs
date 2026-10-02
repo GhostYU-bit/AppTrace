@@ -104,6 +104,26 @@ public enum EvidenceType
     /// <summary>Executable metadata (ProductName/CompanyName/FileDescription) matched.</summary>
     ExecutableMetadataMatch,
 
+    /// <summary>
+    /// A binary in this directory is signed by the application's publisher,
+    /// according to the publisher named by its embedded Authenticode certificate.
+    /// </summary>
+    /// <remarks>
+    /// <para>What it proves: the binary's own signature corroborates the
+    /// application's publisher identity, which supports a candidate the name or
+    /// provenance already proposed.</para>
+    /// <para>What it does not prove: that the application — or its publisher — owns
+    /// the directory, an ancestor, a vendor namespace or a subtree. A signer
+    /// identifies a binary; a publisher can sign many products, so publisher
+    /// agreement can never choose among several installed products of the same
+    /// publisher, and it is deliberately excluded from the identity records that may
+    /// corroborate a provenance anchor into a HIGH claim.</para>
+    /// <para>Absence of an embedded certificate is "not observed", never
+    /// "unsigned", so it produces no record of any kind rather than a
+    /// contradiction.</para>
+    /// </remarks>
+    SignerPublisherMatch,
+
     /// <summary>A registry value outside the uninstall keys references this path.</summary>
     RegistryReference,
 
@@ -234,7 +254,13 @@ public enum EvidenceSource
 {
     Registry,
     Filesystem,
+
+    /// <summary>Version resource (ProductName/CompanyName/FileDescription) of a binary.</summary>
     ExecutableMetadata,
+
+    /// <summary>Embedded Authenticode certificate of a binary (publisher only).</summary>
+    Authenticode,
+
     PathHeuristic,
     Derived,
 }

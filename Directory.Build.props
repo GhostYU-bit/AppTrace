@@ -2,7 +2,7 @@
 
   <!--
     Shared build settings for every AppTrace project.
-    AppTrace Phase 0 targets Windows only: the registry APIs and the well-known
+    AppTrace targets Windows only: the registry APIs and the well-known
     folder layout it depends on are Windows-specific by design.
   -->
   <PropertyGroup>
@@ -16,7 +16,7 @@
     <Product>AppTrace</Product>
     <Authors>AppTrace contributors</Authors>
     <Version>0.1.0</Version>
-    <!-- CA1305: AppTrace Phase 0 reports in the invariant format the CLI expects. -->
+    <!-- CA1305: AppTrace reports in the invariant format the CLI expects. -->
     <NoWarn>$(NoWarn);CA1303;CA1305;CA1848;CA2007</NoWarn>
   </PropertyGroup>
 

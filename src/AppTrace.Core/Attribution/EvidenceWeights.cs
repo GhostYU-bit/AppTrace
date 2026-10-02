@@ -9,8 +9,8 @@ using AppTrace.Core.Model;
 /// <para>
 /// The weights are explicit, documented, and deliberately coarse. They exist so
 /// the final <see cref="Classification"/> is a mechanical function of the
-/// evidence rather than a number invented afterwards. Phase 0 has no
-/// probabilistic model, so the score is never shown as a percentage.
+/// evidence rather than a number invented afterwards. There is no probabilistic
+/// model, so the score is never shown as a percentage.
 /// </para>
 /// <para>
 /// The design follows Bulk Crap Uninstaller's proven approach of a signed score

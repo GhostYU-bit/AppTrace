@@ -54,7 +54,7 @@ internal sealed class CorpusDesired
 }
 
 /// <summary>
-/// What the Phase 0 engine actually does today, recorded so the normal test suite
+/// What the engine actually does today, recorded so the normal test suite
 /// can stay green while the gap to <see cref="Desired"/> is reported.
 /// </summary>
 /// <remarks>
@@ -96,7 +96,7 @@ internal sealed class CorpusCase
 
     public required CorpusDesired Desired { get; init; }
 
-    /// <summary>Null when Phase 0's outcome has not been recorded yet.</summary>
+    /// <summary>Null when the engine's outcome has not been recorded yet.</summary>
     public CorpusCurrent? Current { get; init; }
 }
 

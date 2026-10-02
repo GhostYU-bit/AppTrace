@@ -357,5 +357,5 @@ public sealed class ReportOptions
 /// <summary>Static build information.</summary>
 public static class AppTraceInfo
 {
-    public const string Version = "0.1.0-phase0";
+    public const string Version = "0.1.0";
 }

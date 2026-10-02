@@ -1,8 +1,14 @@
 # AppTrace — Research Notes
 
-Phase 0 spike notes. Everything here was read from the upstream sources at the
-commits that were cloned locally, not from blog posts or summaries. Line numbers
-refer to those checkouts.
+> **Historical — not normative.** These are the spike notes taken while the
+> technology and attribution approach were chosen. They record what the upstream
+> projects do and which *concepts* were adopted or rejected at the time. The
+> normative description of the engine's current behaviour is
+> [`ATTRIBUTION_ENGINE_V2.md`](ATTRIBUTION_ENGINE_V2.md).
+
+Everything below was read from the upstream sources at the commits that were
+cloned locally, not from blog posts or summaries. Line numbers refer to those
+checkouts.
 
 | Project | Repository | License | Local checkout |
 | --- | --- | --- | --- |
@@ -88,7 +94,7 @@ below `shortestLength / 3` is accepted as a match. `TestForSimilarNames`
 
 **Deliberately rejected.** AppTrace inverts this trade-off. A fuzzy match at
 Sift4 distance 1 between two short product names is exactly how unrelated user
-data gets confidently assigned to an application. Phase 0 uses exact folded
+data gets confidently assigned to an application. AppTrace uses exact folded
 equality plus whole-word, end-anchored overlap — and *nothing else* — so the
 model can never claim a directory because two names look similar. This is a
 deliberate false-negative budget (see section 4 of the task: "prefer false

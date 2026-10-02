@@ -4,7 +4,7 @@ namespace AppTrace.Core.Model;
 /// The coarse, defensible confidence buckets AppTrace exposes.
 /// </summary>
 /// <remarks>
-/// Phase 0 deliberately has no probabilistic model, so it never publishes a
+/// AppTrace deliberately has no probabilistic model, so it never publishes a
 /// percentage. The internal score exists only to order and bucket evidence; the
 /// classification is what users and downstream consumers should rely on.
 /// </remarks>

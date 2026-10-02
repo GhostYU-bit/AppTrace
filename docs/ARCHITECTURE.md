@@ -1,8 +1,14 @@
 # AppTrace — Architecture
 
-Phase 0 design record. Written after the research spike in
-[`RESEARCH.md`](RESEARCH.md), and kept short on purpose: this is a small local
-Windows utility, not a platform.
+Written after the research spike in [`RESEARCH.md`](RESEARCH.md), and kept short
+on purpose: this is a small local Windows utility, not a platform.
+
+> **Scope.** This document describes the system's shape: technology choice,
+> repository layout, data model, pipeline structure, measurement, safety and
+> determinism. The **normative** description of the attribution engine's current
+> behaviour is [`ATTRIBUTION_ENGINE_V2.md`](ATTRIBUTION_ENGINE_V2.md). Where the
+> attribution detail below (sections 5, 5a and 6) disagrees with that document,
+> the V2 document wins.
 
 ## 1. What AppTrace is
 
@@ -57,7 +63,7 @@ Rationale, in priority order:
 2. **Metadata and traversal without dependencies.** `FileVersionInfo` and
    `DirectoryInfo.GetFileSystemInfos` (which returns attributes *and* sizes in one
    call, so `FileAttributes.ReparsePoint` is available without a second stat) cover
-   everything Phase 0 needs.
+   everything the tool needs.
 3. **Zero-dependency core.** The whole product depends on one NuGet package family,
    and only in the test project. That matters for a tool that must be auditable by
    a cautious user.
@@ -65,10 +71,10 @@ Rationale, in priority order:
    that in the build rather than in defensive code.
 
 Rust would win on traversal throughput and binary size. Neither is the
-bottleneck at Phase 0: **I/O latency and attribution correctness are.** Phase 0
-is explicitly about proving the generic attribution model, so the stack that gets
-to a correct, explainable model fastest and with the least incidental risk was
-chosen.
+bottleneck for this tool: **I/O latency and attribution correctness are.**
+AppTrace is explicitly about proving the generic attribution model, so the stack
+that gets to a correct, explainable model fastest and with the least incidental
+risk was chosen.
 
 This was not a novelty decision, and it is reversible at the seams: `Attribution`
 and `Model` contain no Windows-specific API calls at all, so the part of the
@@ -397,7 +403,7 @@ product's data beneath it.
 
 The score exists so the classification is a mechanical function of evidence. It
 is reported in JSON as a diagnostic and is **never** shown as a percentage:
-Phase 0 has no defensible probabilistic model.
+there is no defensible probabilistic model.
 
 **Per candidate**, evaluated in order (`AttributionEngine.ClassifyCandidate`):
 
@@ -483,7 +489,7 @@ FileVersionInfo.GetVersionInfo()      read version resource
 There is no `Delete`, `Move`, `Create`, `Write`, `Rename`, `SetAttributes`, no
 process launch, and no registry write (`OpenSubKey` is called with
 `RegistryKeyPermissionCheck.ReadSubTree`; `CreateSubKey` and `SetValue` appear
-nowhere). No CLI command performs remediation, and none is planned for Phase 0.
+nowhere). No CLI command performs remediation, and none is planned.
 
 Additional guarantees:
 
@@ -516,7 +522,7 @@ that could drift.
 
 ## 10. Performance
 
-Phase 0 is intentionally sequential. A single measured pass walks each directory
+The scanner is intentionally sequential. A single measured pass walks each directory
 once, caching size, file count and child list per directory, so the partitioning
 pass costs no extra I/O. The whole-scan workload is bounded by the file budget.
 
@@ -535,12 +541,12 @@ added: nesting a parallel walk under parallel work silently starves the pool and
 produces empty results. When this is addressed it should be measured, not
 guessed.
 
-## 11. Explicit non-goals for Phase 0
+## 11. Explicit non-goals
 
 No deletion, cleanup, uninstall, registry modification, orphan removal, system
 optimisation, startup management, treemap, duplicate finder, browser or
 developer-cache cleaner, AI attribution, cloud service, telemetry, accounts,
-backend, GUI, or large hard-coded application database. Phase 0 exists to prove
+backend, GUI, or large hard-coded application database. AppTrace exists to prove
 the generic attribution model, and every item above is a separate decision that
 needs its own evidence.
 
@@ -555,6 +561,6 @@ Adding a detector is meant to be small and local:
    condition in `ClassifyCandidate`.
 
 Nothing else changes: the model, the scanner, the accounting, the text report and
-the JSON output all work from `Evidence` records generically. The candidate
-evidence types already reserved for later work are `RegistryReference`,
-`ProductCodeMatch`, `ChildDirectoryMatch` and `ConflictingApplicationMatch`.
+the JSON output all work from `Evidence` records generically. Which evidence types
+are live today and which are defined but reserved is stated in
+[`ATTRIBUTION_ENGINE_V2.md`](ATTRIBUTION_ENGINE_V2.md), section 3.

@@ -7,7 +7,7 @@ using System.Runtime.Versioning;
 /// Version metadata read from a representative executable inside a directory.
 /// </summary>
 /// <remarks>
-/// Binary metadata is the only signal in Phase 0 that comes from file content
+/// Binary metadata is the only signal that comes from file content
 /// rather than from a name. It is used the way Bulk Crap Uninstaller uses
 /// CompanyName/ProductName matching: as corroboration, never as proof, and only
 /// from a small bounded number of files per scan.

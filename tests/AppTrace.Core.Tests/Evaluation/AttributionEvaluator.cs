@@ -51,7 +51,7 @@ internal sealed class EvaluationOutcome
 
     public required string ExpectedBound { get; init; }
 
-    /// <summary>Null when the case has no recorded Phase 0 baseline.</summary>
+    /// <summary>Null when the case has no recorded baseline.</summary>
     public IReadOnlyList<string>? BaselineDrift { get; init; }
 
     /// <summary>Null when the case carries no relationship expectation.</summary>
@@ -342,7 +342,7 @@ internal static class AttributionEvaluator
         => values.Select(v => Parse(v) ?? Classification.Unknown).ToArray();
 
     /// <summary>
-    /// Compares the engine against a recorded Phase 0 baseline. A non-empty result
+    /// Compares the engine against its recorded baseline. A non-empty result
     /// means behaviour changed, which is a deliberate act that must be recorded.
     /// </summary>
     private static List<string>? CompareToBaseline(CorpusCase testCase, EngineVerdict verdict)

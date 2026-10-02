@@ -8,7 +8,7 @@ using AppTrace.Core.Scanning;
 namespace AppTrace.Cli;
 
 /// <summary>
-/// AppTrace's developer-facing command line. Phase 0 exposes discovery, scanning
+/// AppTrace's developer-facing command line. It exposes discovery, scanning
 /// and reporting only; there is no command that modifies the system.
 /// </summary>
 internal static class Program
@@ -34,7 +34,7 @@ internal static class Program
 
         if (!OperatingSystem.IsWindows())
         {
-            Console.Error.WriteLine("apptrace: Phase 0 only supports Windows.");
+            Console.Error.WriteLine("apptrace: AppTrace only supports Windows.");
             return 3;
         }
 
@@ -198,7 +198,7 @@ internal static class Program
         }
 
         Console.WriteLine();
-        Console.WriteLine("Measured but never partitioned (Phase 0 exclusion):");
+        Console.WriteLine("Measured but never partitioned (MSIX package payloads):");
         foreach (var exclusion in ScanOptions.DefaultExclusions(KnownFolders.LocalAppData() ?? string.Empty))
         {
             Console.WriteLine($"  {exclusion}");

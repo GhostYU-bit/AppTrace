@@ -17,13 +17,13 @@ public sealed class ScanRoot
 }
 
 /// <summary>
-/// Resolves the Windows well-known folders AppTrace inspects in Phase 0.
+/// Resolves the Windows well-known folders AppTrace inspects.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public static class KnownFolders
 {
     /// <summary>
-    /// The Phase 0 scan scope, in the order the spec lists it.
+    /// The scan scope, in the order the spec lists it.
     /// </summary>
     /// <remarks>
     /// <c>%LOCALAPPDATA%</c> is deliberately first-class: Squirrel/Electron

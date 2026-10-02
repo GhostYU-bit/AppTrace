@@ -4,7 +4,7 @@ How AppTrace measures whether an attribution change made the engine **more
 correct** or merely **different**.
 
 This is the practical companion to
-[`ATTRIBUTION_ENGINE_V2.md`](ATTRIBUTION_ENGINE_V2.md) §J. It exists so that any
+[`ATTRIBUTION_ENGINE_V2.md`](ATTRIBUTION_ENGINE_V2.md) §17. It exists so that any
 future change to the attribution engine can be answered with evidence:
 
 > Which known cases did this fix, which did it break, and did the number of
@@ -16,7 +16,7 @@ future change to the attribution engine can be answered with evidence:
 
 | File | What it is | What it measures |
 | --- | --- | --- |
-| [`attribution-corpus.json`](../tests/AppTrace.Core.Tests/Evaluation/attribution-corpus.json) | 24 synthetic cases: real failure patterns, known-good cases, and structural invariants | Rule-level behaviour. Deterministic and machine-independent. |
+| [`attribution-corpus.json`](../tests/AppTrace.Core.Tests/Evaluation/attribution-corpus.json) | 26 synthetic cases: real failure patterns, known-good cases, and structural invariants | Rule-level behaviour. Deterministic and machine-independent. |
 | [`real-machine-labels.json`](../tests/AppTrace.Core.Tests/Evaluation/real-machine-labels.json) | 34 hand-labelled real paths from one Windows machine | Real-world owner precision. |
 | [`corpus-golden.json`](../tests/AppTrace.Core.Tests/Evaluation/corpus-golden.json) | The frozen set of corpus cases that are not yet satisfied | Detects both regressions and unrecorded improvements. |
 
@@ -77,10 +77,10 @@ A corpus case separates three things that used to be conflated:
     "minClassification": "Medium"     // or allowedClassifications: ["Shared", ...]
   },
 
-  // What Phase 0 does today. Asserted, so a change cannot pass unnoticed.
+  // What the engine does today. Asserted, so a change cannot pass unnoticed.
   "current": {
     "owner": "Vivaldi",
-    "classification": "High",
+    "classification": "Medium",
     "supportingEvidence": ["ExactDirectoryNameMatch", "KnownApplicationPath"]
   }
 }
@@ -168,7 +168,7 @@ high-confidence human judgement.
 
 ## Current baseline
 
-Measured after Task 07 (Static Provenance Enrichment).
+Measured after Task 07.7 (Single-Product Vendor Namespace Hardening).
 
 ```text
 Corpus
@@ -189,10 +189,11 @@ Real machine (hand-labelled)
   false negatives                        1   (a Steam soundtrack path)
 ```
 
-These two sets are **unchanged by Task 07, deliberately**. Both are evaluated
-through fixtures with executable probing disabled and no provenance index, so their
-numbers cannot depend on which registrations happen to exist on the machine running
-them. That is what makes them a regression harness rather than a machine snapshot.
+These two sets are **deliberately independent of live provenance**. Both are
+evaluated through fixtures with executable probing disabled and no provenance index,
+so their numbers cannot depend on which registrations happen to exist on the machine
+running them. That is what makes them a regression harness rather than a machine
+snapshot.
 
 Task 07's effect shows up in a **live scan**, which is what it is for:
 
@@ -240,8 +241,8 @@ missing candidate generation as the dominant UNKNOWN cause, no near-threshold or
 semantic-suppression misses, the vendor-root takeover defect, correlated-provenance
 amplification, the reporting reconciliation defect, the display-name corruption, and
 the shared storefront root — are recorded in
-[ATTRIBUTION_ENGINE_V2.md](ATTRIBUTION_ENGINE_V2.md#task-075-findings--real-machine-field-evaluation)
-together with the Task 07.6 corrections they motivated.
+[ATTRIBUTION_HISTORY.md](ATTRIBUTION_HISTORY.md) together with the Task 07.6
+corrections they motivated.
 
 ---
 

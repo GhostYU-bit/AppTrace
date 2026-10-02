@@ -34,18 +34,21 @@ Discord
 
 Note what the explanation shows: two of those three records are `Structure` — they
 describe *where the directory is*, not *who owns it* — so they corroborate the
-name but cannot make the claim confident. Under Phase 0 the same records summed to
-`HIGH`. That difference is the whole point of the v0.1.0 evidence model.
+name but cannot make the claim confident. Under the earlier score-only engine the
+same records summed to `HIGH`. Making that difference impossible is the whole point
+of the evidence-kind model.
 
 The current emphasis is **attribution and explainability, not cleanup.**
 
 ## Status — v0.1.0, experimental
 
 **Experimental / early development.** This is the first public development
-baseline. Attribution Engine V2 is **not complete**: the evidence model and
-confidence semantics, the filesystem semantic layer, and the ownership/relationship
-model are in, but the additional provenance sources (App Paths, services, scheduled
-tasks, Run keys, shortcuts, signers) are not.
+baseline. Attribution Engine V2 is the current, frozen architecture: the evidence
+model and confidence semantics, the filesystem semantic layer, the
+ownership/relationship model, and the static provenance sources (App Paths,
+services, scheduled tasks, Run keys, shortcuts and uninstall `DisplayIcon` values)
+are implemented. Authenticode signer attribution and MSIX package mapping are not
+yet integrated, and are the recommended next evidence sources.
 
 Expect, in particular:
 
@@ -110,7 +113,7 @@ is opened read-only. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §8.
 ```powershell
 dotnet build AppTrace.sln -c Release
 
-# 228 tests: unit, regression corpus, and the hand-labelled evaluation harness
+# 256 tests: unit, regression corpus, and the hand-labelled evaluation harness
 dotnet test tests/AppTrace.Core.Tests
 ```
 
@@ -195,8 +198,8 @@ longer be added to a name resemblance to produce a confident claim. A decisive
 contradiction is a gate, not a weight, and cannot be outvoted by accumulated weak
 evidence.
 
-Read [docs/ATTRIBUTION_ENGINE_V2.md](docs/ATTRIBUTION_ENGINE_V2.md) §C and §G for
-the taxonomy and the exact rules.
+Read [docs/ATTRIBUTION_ENGINE_V2.md](docs/ATTRIBUTION_ENGINE_V2.md) for the evidence
+taxonomy, the classification ladder and the exact rules.
 
 ## Philosophy
 
@@ -210,13 +213,16 @@ and no path ever leaves your machine.
 
 ## Documentation
 
-* [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — stack, data model, attribution
-  pipeline, classification, accounting, safety
-* [docs/ATTRIBUTION_ENGINE_V2.md](docs/ATTRIBUTION_ENGINE_V2.md) — the V2 design,
-  what Task 04 implemented, and what is still to come
+* [docs/ATTRIBUTION_ENGINE_V2.md](docs/ATTRIBUTION_ENGINE_V2.md) — **normative:**
+  how attribution works now — evidence, candidates, boundaries, classification,
+  provenance, relationships, measurement and safety
 * [docs/EVALUATION.md](docs/EVALUATION.md) — the regression corpus and evaluation
   harness, and how to add a new attribution case
-* [docs/RESEARCH.md](docs/RESEARCH.md) — what was learned from Bulk Crap
+* [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — stack, repository layout, data
+  model, measurement and safety
+* [docs/ATTRIBUTION_HISTORY.md](docs/ATTRIBUTION_HISTORY.md) — historical,
+  non-normative: the V2 design spike and the task-by-task "as built" record
+* [docs/RESEARCH.md](docs/RESEARCH.md) — historical: what was learned from Bulk Crap
   Uninstaller and Jharu, and what was deliberately not adopted
 
 ## Non-goals

@@ -53,7 +53,7 @@ public sealed class AppIdentity
 
     /// <summary>
     /// Directory name candidates derived from the identity, used as scan hints.
-    /// Phase 0 uses these only to prioritise inspection; attribution is always
+    /// AppTrace uses these only to prioritise inspection; attribution is always
     /// performed by <c>AttributionEngine</c> from evidence.
     /// </summary>
     public IReadOnlyList<string> NameTokens => _nameTokens ??= TextNormalizer.Tokens(NormalizedName);

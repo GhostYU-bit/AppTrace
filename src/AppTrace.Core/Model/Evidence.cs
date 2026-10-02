@@ -34,8 +34,10 @@ public enum EvidenceKind
     Structure,
 
     /// <summary>
-    /// Answers: is this data owned by Application X, or merely about it? No detector
-    /// emits this yet; the Owns/RelatedTo model arrives in a later task.
+    /// Answers: is this data owned by Application X, or merely about it? A
+    /// Relationship record is never scored and never receives bytes, which is what
+    /// keeps a subject name found inside an owned tree from adding its way to
+    /// ownership of that tree.
     /// </summary>
     Relationship,
 

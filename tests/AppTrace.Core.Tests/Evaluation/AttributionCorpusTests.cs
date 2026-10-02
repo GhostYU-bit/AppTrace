@@ -7,7 +7,7 @@ namespace AppTrace.Core.Tests.Evaluation;
 /// <para>The suite is deliberately green. It asserts what must not drift and
 /// reports everything else:</para>
 /// <list type="number">
-/// <item><b>Phase 0 behaviour is unchanged.</b> Each case's recorded
+/// <item><b>The recorded baseline is unchanged.</b> Each case's recorded
 /// <c>current</c> block is asserted. If an attribution change alters a known case,
 /// this fails — which is the point: the change must be recorded deliberately.</item>
 /// <item><b>The known-defect set is frozen.</b> The set of cases whose V2
@@ -40,7 +40,7 @@ public class AttributionCorpusTests
     }
 
     [Fact]
-    public void EveryCaseReproducesItsRecordedPhase0Behaviour()
+    public void EveryCaseReproducesItsRecordedBaseline()
     {
         var document = AttributionCorpus.Load();
         var drift = RunAll(document)
@@ -50,7 +50,7 @@ public class AttributionCorpusTests
 
         Assert.True(
             drift.Length == 0,
-            "The engine no longer produces the recorded Phase 0 behaviour for these cases. " +
+            "The engine no longer produces the recorded baseline behaviour for these cases. " +
             "If the change is intended, update the 'current' block in attribution-corpus.json " +
             "and record it in the task report:" + Environment.NewLine + string.Join(Environment.NewLine, drift));
     }

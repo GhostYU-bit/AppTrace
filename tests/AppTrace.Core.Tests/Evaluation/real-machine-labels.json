@@ -60,7 +60,7 @@
       "owner": null,
       "minClassification": "Unknown",
       "confidence": "high",
-      "reasoning": "The only executable is electron.exe, whose version resource is ProductName 'Electron', CompanyName 'GitHub, Inc.'. The engine matched Git because 'git' is a substring of 'githubinc' - a spurious match with no relation to Git. The path lies inside DaVinci Resolve's install tree. This is a real, reproducible instance of the substring-matching defect described in docs/ATTRIBUTION_ENGINE_V2.md section A.3."
+      "reasoning": "The only executable is electron.exe, whose version resource is ProductName 'Electron', CompanyName 'GitHub, Inc.'. The engine matched Git because 'git' is a substring of 'githubinc' - a spurious match with no relation to Git. The path lies inside DaVinci Resolve's install tree. This was a real, reproducible instance of the substring-matching defect documented historically in docs/ATTRIBUTION_HISTORY.md (A.3); it is retained as a regression guard so the path can never again become Git-owned."
     },
     {
       "id": "RM-WRONG-OXFORD-PUBLISHER-DIR",
@@ -392,7 +392,7 @@
       "owner": "NVIDIA App 11.0.9.251",
       "minClassification": "Medium",
       "confidence": "medium",
-      "reasoning": "Verified on disk to contain 'NVIDIA App.exe' with CompanyName 'NVIDIA Corporation', and the engine's own Recommended-relation case depends on this tree being NVIDIA App storage. Not marked certain because the path was not emitted as an accounted location by the Phase 0 scan, so it cannot be reconciled against the scan directly. Listed for review.",
+      "reasoning": "Verified on disk to contain 'NVIDIA App.exe' with CompanyName 'NVIDIA Corporation', and the engine's own Recommended-relation case depends on this tree being NVIDIA App storage. Not marked certain because the path was not emitted as an accounted location by the recorded scan, so it cannot be reconciled against the scan directly. Listed for review.",
       "label": "uncertain"
     },
     {

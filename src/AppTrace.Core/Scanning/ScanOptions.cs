@@ -13,8 +13,8 @@ public sealed class ScanOptions
 
     /// <summary>
     /// Subdirectories of the scan roots that are measured but never partitioned.
-    /// The default excludes MSIX package payloads, which are opaque to Phase 0
-    /// attribution and would otherwise dominate AppData.
+    /// The default excludes MSIX package payloads, which AppTrace does not
+    /// partition yet and which would otherwise dominate AppData.
     /// </summary>
     public IReadOnlyList<string> ExcludedSubdirectories { get; init; } = [];
 

@@ -5,7 +5,7 @@ using AppTrace.Core.Model;
 namespace AppTrace.Core.Tests;
 
 /// <summary>
-/// Covers the evidence-to-classification rules that Phase 0 depends on.
+/// Covers the evidence-to-classification rules the engine depends on.
 /// </summary>
 /// <remarks>
 /// Every case here is synthetic: it fixes an application list and a path, so the

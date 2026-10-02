@@ -1,0 +1,705 @@
+{
+  "comment": "AppTrace attribution regression corpus. See docs/ATTRIBUTION_ENGINE_V2.md section J and docs/EVALUATION.md. Paths are SYNTHETIC but structurally faithful to the real cases: the real filesystem is deliberately not consulted, so a verdict can never depend on what happens to be installed on the machine running the tests. Only the 'path' is synthetic - the applications, leaf names, path depth and location categories reproduce the real machine evidence exactly. 'current' records Phase 0 behaviour as a baseline that the normal suite asserts; a change to it is a deliberate act that must be recorded. 'desired' records what the engine should eventually do and is reported, never asserted, until the relevant V2 task lands.",
+  "apps": [
+    {
+      "id": "app-nodejs",
+      "displayName": "Node.js Krypton via nvm-windows",
+      "publisher": "OpenJS Foundation",
+      "installLocation": "C:\\Users\\user\\AppData\\Local\\Author Software\\nvm\\installs\\v24.21.0"
+    },
+    {
+      "id": "app-asusaurasdk",
+      "displayName": "ASUS Aura SDK",
+      "publisher": "ASUSTek COMPUTER INC."
+    },
+    {
+      "id": "app-epsonsecuritytool",
+      "displayName": "Epson Printer Driver Security Support Tool",
+      "publisher": "Seiko Epson Corporation"
+    },
+    {
+      "id": "app-universalholtek",
+      "displayName": "Universal Holtek RGB DRAM",
+      "publisher": "PD"
+    },
+    {
+      "id": "app-360zip",
+      "displayName": "360 Zip",
+      "publisher": "360 Security Center",
+      "installLocation": "C:\\Program Files (x86)\\360\\360zip"
+    },
+    {
+      "id": "app-asusupdatehelper",
+      "displayName": "ASUS Update Helper",
+      "publisher": "ASUSTeK Computer Inc."
+    },
+    {
+      "id": "app-citiesskylines",
+      "displayName": "Cities: Skylines",
+      "publisher": "Colossal Order"
+    },
+    {
+      "id": "app-nvidiaapp",
+      "displayName": "NVIDIA App 11.0.9.251",
+      "publisher": "NVIDIA Corporation",
+      "installLocation": "C:\\Program Files\\NVIDIA Corporation\\Installer2\\Display.NvApp.{E260AC3A-3015-4D58-B634-2496B0C48CCB}"
+    },
+    {
+      "id": "app-adobeillustrator",
+      "displayName": "Adobe Illustrator 2023",
+      "publisher": "Adobe Inc.",
+      "installLocation": "C:\\Program Files\\Adobe\\Adobe Illustrator 2023"
+    },
+    {
+      "id": "app-vivaldi",
+      "displayName": "Vivaldi",
+      "publisher": "Vivaldi Technologies AS",
+      "installLocation": "C:\\Users\\user\\AppData\\Local\\Vivaldi\\Application"
+    },
+    {
+      "id": "app-googlechrome",
+      "displayName": "Google Chrome",
+      "publisher": "Google LLC",
+      "installLocation": "C:\\Program Files\\Google\\Chrome\\Application"
+    },
+    {
+      "id": "app-googledrive",
+      "displayName": "Google Drive",
+      "publisher": "Google LLC",
+      "installLocation": "C:\\Program Files\\Google\\Drive"
+    },
+    {
+      "id": "app-wpsoffice",
+      "displayName": "WPS Office (12.1.0.28505)",
+      "publisher": "Kingsoft Corp."
+    },
+    {
+      "id": "app-traecn",
+      "displayName": "TraeCode CN (User)",
+      "publisher": "Beijing Yinli Catapult Technology Co., Ltd.",
+      "installLocation": "C:\\Users\\user\\AppData\\Local\\Programs\\Trae CN\\"
+    },
+    {
+      "id": "app-traesolo",
+      "displayName": "TraeWork CN (User)",
+      "publisher": "Beijing Yinli Catapult Technology Co., Ltd.",
+      "installLocation": "C:\\Users\\user\\AppData\\Local\\Programs\\TRAE SOLO CN\\"
+    },
+    {
+      "id": "app-msedge",
+      "displayName": "Microsoft Edge",
+      "publisher": "Microsoft Corporation",
+      "installLocation": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
+    },
+    {
+      "id": "app-msonedrive",
+      "displayName": "Microsoft OneDrive",
+      "publisher": "Microsoft Corporation"
+    },
+    {
+      "id": "app-photoshop2023",
+      "displayName": "Adobe Photoshop 2023",
+      "publisher": "Adobe Inc.",
+      "installLocation": "C:\\Program Files\\Adobe\\Adobe Photoshop 2023"
+    },
+    {
+      "id": "app-mumuplayer",
+      "displayName": "MuMuPlayer",
+      "publisher": "Netease",
+      "installLocation": "C:\\Program Files\\Netease\\MuMuPlayer"
+    },
+    {
+      "id": "app-contosostudio",
+      "displayName": "Contoso Studio",
+      "publisher": "Contoso"
+    },
+    {
+      "id": "app-widgetone",
+      "displayName": "Widget One",
+      "publisher": "Widgetco"
+    },
+    {
+      "id": "app-widgettwo",
+      "displayName": "Widget Two",
+      "publisher": "Widgetco"
+    },
+    {
+      "id": "app-cacheapp",
+      "displayName": "Cache",
+      "publisher": "Cache Systems Ltd"
+    },
+    {
+      "id": "app-doubao",
+      "displayName": "Doubao",
+      "publisher": "Beijing Doubao Technology Co., Ltd.",
+      "installLocation": "C:\\Program Files\\Doubao"
+    },
+    {
+      "id": "app-dshdesktop",
+      "displayName": "DSH Desktop",
+      "publisher": "Author Software",
+      "installLocation": "C:\\Users\\user\\AppData\\Local\\Programs\\DSH Desktop"
+    },
+    {
+      "id": "app-amazonworkspaces",
+      "displayName": "Amazon WorkSpaces",
+      "publisher": "Amazon.com Services LLC",
+      "installLocation": "C:\\Program Files\\Amazon Web Services\\Amazon WorkSpaces"
+    },
+    {
+      "id": "app-stronghold",
+      "displayName": "Stronghold Tool",
+      "publisher": "Stronghold Systems"
+    }
+  ],
+  "cases": [
+    {
+      "id": "FP-A-RUNTIME-NODE",
+      "description": "Leaf 'node' inside a Chromium sandbox_runtime tree belonging to another product.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Doubao\\User Data\\sandbox_runtime\\bases\\c98c5042338ed152\\node",
+      "category": "LocalAppData",
+      "apps": [
+        "app-nodejs",
+        "app-doubao"
+      ],
+      "reason": "Runtime sandbox vocabulary must not be read as product identity. 'node' is the leading token of a 6-token application name and no provenance links the runtime to Doubao's sandbox.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": "Node.js Krypton via nvm-windows",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "FP-B-NPM-TYPES-NODE",
+      "description": "npm dependency-tree package '@types/node'.",
+      "path": "C:\\Users\\user\\AppData\\Local\\npm-cache\\_npx\\0f94ee7615faf582\\node_modules\\@types\\node",
+      "category": "LocalAppData",
+      "apps": [
+        "app-nodejs"
+      ],
+      "reason": "A directory under node_modules is a package, not an application. Dependency-tree structures must forbid name-derived identity.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": "Node.js Krypton via nvm-windows",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "FP-C-NPM-ANTHROPIC-SDK",
+      "description": "npm dependency-tree package '@anthropic-ai/sdk' claimed by ASUS Aura SDK because both contain 'sdk'.",
+      "path": "C:\\Users\\user\\AppData\\Local\\npm-cache\\_npx\\1e7f6d9597241db0\\node_modules\\@anthropic-ai\\sdk",
+      "category": "LocalAppData",
+      "apps": [
+        "app-asusaurasdk"
+      ],
+      "reason": "The one-token match 'sdk' accounts for 1 of 3 name tokens of 'ASUS Aura SDK' and there is no provenance for it. This is the archetypal false HIGH.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": "ASUS Aura SDK",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "FP-D-TEARDOWN-PROMO-TOOL",
+      "description": "Leaf 'tool' in a game's promotional assets, claimed by an Epson security tool.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Teardown\\promo\\tool",
+      "category": "LocalAppData",
+      "apps": [
+        "app-epsonsecuritytool"
+      ],
+      "reason": "'tool' is trailing generic vocabulary accounting for 1 of 6 name tokens of 'Epson Printer Driver Security Support Tool'.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": "Epson Printer Driver Security Support Tool",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "FP-E-QTQUICK-UNIVERSAL",
+      "description": "Qt framework segment 'Universal' under a video editor's application tree.",
+      "path": "C:\\Users\\user\\AppData\\Local\\JianyingPro\\Apps\\6.6.0.12145\\QtQuick\\Controls\\Universal",
+      "category": "LocalAppData",
+      "apps": [
+        "app-universalholtek"
+      ],
+      "reason": "A Qt style name is framework vocabulary, and it is the leading token of a 4-token product name.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": "Universal Holtek RGB DRAM",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "FP-F-ELECTRON-ADM-ZIP",
+      "description": "Bundled dependency 'adm-zip' inside a different Electron application, claimed by 360 Zip.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Programs\\Contoso Desktop\\resources\\app\\node_modules\\adm-zip",
+      "category": "LocalAppData",
+      "apps": [
+        "app-360zip",
+        "app-dshdesktop"
+      ],
+      "reason": "Trailing-token overlap ('adm-zip' against '360 Zip') must not carry a match, and node_modules forbids name identity. The real case is a bundled dependency of an unrelated Electron app.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": "360 Zip",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "FP-G-WORKSPACES-LOGS-HELPER",
+      "description": "Leaf 'helper' in Amazon WorkSpaces logs, claimed by an ASUS helper.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Amazon Web Services\\Amazon WorkSpaces\\logs\\helper",
+      "category": "LocalAppData",
+      "apps": [
+        "app-asusupdatehelper",
+        "app-amazonworkspaces"
+      ],
+      "reason": "'helper' accounts for 1 of 3 name tokens and is trailing generic vocabulary.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": "ASUS Update Helper",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "REL-NVIDIA-GAME-RECOMMENDATION",
+      "description": "NVIDIA App recommendation data named after a game.",
+      "path": "C:\\Users\\user\\AppData\\Local\\NVIDIA Corporation\\NVIDIA app\\NvBackend\\Recommendations\\cities_skylines",
+      "category": "LocalAppData",
+      "acceptedAncestors": [
+        "C:\\Users\\user\\AppData\\Local\\NVIDIA Corporation\\NVIDIA app"
+      ],
+      "apps": [
+        "app-citiesskylines",
+        "app-nvidiaapp"
+      ],
+      "reason": "The name match is real but the bytes belong to NVIDIA App. Ownership must go to the container and the game becomes a relationship rather than an owner.",
+      "desired": {
+        "owner": "NVIDIA App 11.0.9.251",
+        "minClassification": "Medium",
+        "relation": "RelatedTo",
+        "relationNote": "Cities: Skylines RELATED_TO. The relationship model does not exist yet (Task 06), so this expectation can only be reported as unresolved."
+      },
+      "current": {
+        "owner": "Cities: Skylines",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "ExactDirectoryNameMatch",
+          "KnownApplicationPath"
+        ]
+      }
+    },
+    {
+      "id": "REL-NVIDIA-ILLUSTRATOR-RECOMMENDATION",
+      "description": "The same NVIDIA App recommendation store, named after a different product.",
+      "path": "C:\\Users\\user\\AppData\\Local\\NVIDIA Corporation\\NVIDIA app\\NvBackend\\Recommendations\\adobe_illustrator",
+      "category": "LocalAppData",
+      "acceptedAncestors": [
+        "C:\\Users\\user\\AppData\\Local\\NVIDIA Corporation\\NVIDIA app"
+      ],
+      "apps": [
+        "app-adobeillustrator",
+        "app-nvidiaapp"
+      ],
+      "reason": "Second instance of the same pattern, so a rule cannot be tuned to one path. Verified present on the real machine with the same shape.",
+      "desired": {
+        "owner": "NVIDIA App 11.0.9.251",
+        "minClassification": "Medium",
+        "relation": "RelatedTo"
+      },
+      "current": {
+        "owner": "Adobe Illustrator 2023",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "ExactDirectoryNameMatch",
+          "KnownApplicationPath"
+        ]
+      }
+    },
+    {
+      "id": "NEARMISS-CITIES-SKYLINES-II",
+      "description": "Saved games for a sequel that is not installed, claimed by the original game.",
+      "path": "C:\\Users\\user\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II",
+      "category": "LocalLowAppData",
+      "apps": [
+        "app-citiesskylines"
+      ],
+      "reason": "The directory names a different product. When the best available explanation requires excluding part of the name, the answer is UNKNOWN rather than the nearest installed application. This directory was verified to exist on the real machine.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": "Cities: Skylines",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "GOOD-VIVALDI",
+      "description": "Per-user application data for a distinctively named product.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Vivaldi",
+      "category": "LocalAppData",
+      "apps": [
+        "app-vivaldi"
+      ],
+      "reason": "Full name coverage with a distinctive brand token. This must stay a correct owner association even if V2 lowers the confidence.",
+      "desired": {
+        "owner": "Vivaldi",
+        "minClassification": "Medium"
+      },
+      "current": {
+        "owner": "Vivaldi",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "ExactDirectoryNameMatch",
+          "KnownApplicationPath"
+        ]
+      }
+    },
+    {
+      "id": "GOOD-GOOGLE-CHROME",
+      "description": "Product directory inside the Google vendor namespace.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Google\\Chrome",
+      "category": "LocalAppData",
+      "apps": [
+        "app-googlechrome",
+        "app-googledrive"
+      ],
+      "reason": "The leaf names the product inside a shared vendor namespace; name coverage is 0.50.",
+      "desired": {
+        "owner": "Google Chrome",
+        "minClassification": "Medium"
+      },
+      "current": {
+        "owner": "Google Chrome",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "KnownPublisherNamespace",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "GOOD-WPS-OFFICE",
+      "description": "Per-user data for WPS Office under its publisher namespace.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Kingsoft\\WPS Office",
+      "category": "LocalAppData",
+      "apps": [
+        "app-wpsoffice"
+      ],
+      "reason": "Distinctive product name inside its own publisher namespace, with no competing product installed.",
+      "desired": {
+        "owner": "WPS Office (12.1.0.28505)",
+        "minClassification": "Medium"
+      },
+      "current": {
+        "owner": "WPS Office (12.1.0.28505)",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "KnownPublisherNamespace",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "GOOD-TRAE-CN",
+      "description": "Install location under LocalAppData\\Programs for an Electron-style application.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Programs\\Trae CN",
+      "category": "LocalAppData",
+      "apps": [
+        "app-traecn",
+        "app-traesolo"
+      ],
+      "reason": "Registry-declared install location. Must stay a correct, high-confidence owner.",
+      "desired": {
+        "owner": "TraeCode CN (User)",
+        "minClassification": "High"
+      },
+      "current": {
+        "owner": "TraeCode CN (User)",
+        "classification": "Confirmed",
+        "supportingEvidence": [
+          "DeclaredInstallLocation",
+          "KnownApplicationPath"
+        ]
+      }
+    },
+    {
+      "id": "GOOD-TRAE-SOLO-CN",
+      "description": "Second product from the same publisher with its own declared install location.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Programs\\TRAE SOLO CN",
+      "category": "LocalAppData",
+      "apps": [
+        "app-traecn",
+        "app-traesolo"
+      ],
+      "reason": "Two sibling products from one publisher; each must resolve to its own declared location and neither may take the other's.",
+      "desired": {
+        "owner": "TraeWork CN (User)",
+        "minClassification": "High"
+      },
+      "current": {
+        "owner": "TraeWork CN (User)",
+        "classification": "Confirmed",
+        "supportingEvidence": [
+          "DeclaredInstallLocation",
+          "KnownApplicationPath"
+        ]
+      }
+    },
+    {
+      "id": "GOOD-MICROSOFT-EDGE",
+      "description": "Per-user data for Microsoft Edge, inside the Microsoft namespace shared with OneDrive.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Microsoft\\Edge",
+      "category": "LocalAppData",
+      "apps": [
+        "app-msedge",
+        "app-msonedrive"
+      ],
+      "reason": "Name coverage 0.50 against a distinctive product token, with a sibling Microsoft product installed so a scoped match is required.",
+      "desired": {
+        "owner": "Microsoft Edge",
+        "minClassification": "Medium"
+      },
+      "current": {
+        "owner": "Microsoft Edge",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "KnownPublisherNamespace",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "GOOD-MICROSOFT-ONEDRIVE",
+      "description": "Per-user data for OneDrive, whose leaf differs from its publisher's other products.",
+      "path": "C:\\Users\\user\\AppData\\Local\\Microsoft\\OneDrive",
+      "category": "LocalAppData",
+      "apps": [
+        "app-msedge",
+        "app-msonedrive"
+      ],
+      "reason": "Sibling of the Edge case, so a rule that fixes one must not break the other.",
+      "desired": {
+        "owner": "Microsoft OneDrive",
+        "minClassification": "Medium"
+      },
+      "current": {
+        "owner": "Microsoft OneDrive",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownApplicationPath",
+          "KnownPublisherNamespace",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "GOOD-PHOTOSHOP-2023",
+      "description": "Install location for Adobe Photoshop 2023 inside the Adobe namespace.",
+      "path": "C:\\Program Files\\Adobe\\Adobe Photoshop 2023",
+      "category": "ProgramFiles",
+      "apps": [
+        "app-photoshop2023",
+        "app-adobeillustrator"
+      ],
+      "reason": "Registry-declared install location with a sibling Adobe product installed, so the vendor namespace must not absorb it.",
+      "desired": {
+        "owner": "Adobe Photoshop 2023",
+        "minClassification": "High"
+      },
+      "current": {
+        "owner": "Adobe Photoshop 2023",
+        "classification": "Confirmed",
+        "supportingEvidence": [
+          "DeclaredInstallLocation",
+          "KnownPublisherNamespace",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "GOOD-MUMUPLAYER",
+      "description": "Install location for MuMuPlayer inside the Netease namespace.",
+      "path": "C:\\Program Files\\Netease\\MuMuPlayer",
+      "category": "ProgramFiles",
+      "apps": [
+        "app-mumuplayer"
+      ],
+      "reason": "Declared install location plus an exact directory-name match.",
+      "desired": {
+        "owner": "MuMuPlayer",
+        "minClassification": "High"
+      },
+      "current": {
+        "owner": "MuMuPlayer",
+        "classification": "Confirmed",
+        "supportingEvidence": [
+          "DeclaredInstallLocation",
+          "ExactDirectoryNameMatch",
+          "KnownPublisherNamespace"
+        ]
+      }
+    },
+    {
+      "id": "STRUCT-PUBLISHER-DIR-IS-NOT-A-PRODUCT",
+      "description": "A publisher directory that is not a product directory.",
+      "path": "C:\\Program Files\\Contoso",
+      "category": "ProgramFiles",
+      "apps": [
+        "app-contosostudio"
+      ],
+      "reason": "Only one Contoso product is installed, which does not make the vendor directory that product's storage. AppTrace must descend instead of crediting the product.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": "Contoso Studio",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "KnownPublisherNamespace",
+          "NormalizedNameMatch"
+        ]
+      }
+    },
+    {
+      "id": "STRUCT-SHARED-VENDOR-NAMESPACE",
+      "description": "Vendor namespace declared as the install location by two products.",
+      "path": "C:\\Program Files\\Google",
+      "category": "ProgramFiles",
+      "apps": [
+        "app-googlechrome",
+        "app-googledrive"
+      ],
+      "reason": "Both products declare this exact directory. It is SHARED or AMBIGUOUS and must never be CONFIRMED for one of them.",
+      "desired": {
+        "owner": null,
+        "allowedClassifications": [
+          "Shared",
+          "Ambiguous",
+          "Unknown"
+        ]
+      },
+      "current": {
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
+      }
+    },
+    {
+      "id": "STRUCT-TWO-PRODUCTS-ONE-VENDOR-DIR",
+      "description": "Ambiguous product folder shared by two sibling products.",
+      "path": "C:\\Program Files\\Widgetco\\Widget",
+      "category": "ProgramFiles",
+      "apps": [
+        "app-widgetone",
+        "app-widgettwo"
+      ],
+      "reason": "Neither name anchors to the folder, so AppTrace may not pick one. UNKNOWN with continued descent is the correct outcome.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
+      }
+    },
+    {
+      "id": "STRUCT-GENERIC-CONTEXT-ALONE",
+      "description": "A directory whose only signal is that it sits under AppData.",
+      "path": "C:\\Users\\user\\AppData\\Local\\SomeVendor",
+      "category": "LocalAppData",
+      "apps": [
+        "app-stronghold"
+      ],
+      "reason": "Being under AppData says nothing about which application owns a directory. Location context alone may never establish ownership, let alone HIGH.",
+      "desired": {
+        "owner": null,
+        "minClassification": "Unknown"
+      },
+      "current": {
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
+      }
+    },
+    {
+      "id": "STRUCT-APP-LITERALLY-NAMED-CACHE",
+      "description": "A real product genuinely named 'Cache' at a product-level path.",
+      "path": "C:\\Program Files\\Cache",
+      "category": "ProgramFiles",
+      "apps": [
+        "app-cacheapp"
+      ],
+      "reason": "Structural vocabulary must be positional. 'Cache' as the whole name of a product directory for a product called Cache is legitimate identity evidence, unlike a 'Cache' segment nested inside another product's tree.",
+      "desired": {
+        "owner": "Cache",
+        "minClassification": "Medium"
+      },
+      "current": {
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
+      }
+    }
+  ]
+}

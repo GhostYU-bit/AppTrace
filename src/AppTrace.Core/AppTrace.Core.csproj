@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RootNamespace>AppTrace.Core</RootNamespace>
+    <AssemblyName>AppTrace.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The test project needs the two evidence-matching helpers that the engine uses
+      to compute name coverage and to decide whether executable metadata names a
+      whole product. They are internal rather than public because they are
+      implementation detail of the attribution engine, and exposed to tests only so
+      the measured specificity values in the Task 02 spike can be asserted directly
+      instead of being inferred from end-to-end output.
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>AppTrace.Core.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

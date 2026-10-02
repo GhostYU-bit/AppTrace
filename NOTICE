@@ -1,0 +1,72 @@
+AppTrace
+Copyright 2026 GhostYU-bit and AppTrace contributors
+
+This product is licensed under the Apache License, Version 2.0. The full licence
+text is included in this repository as LICENSE.
+
+--------------------------------------------------------------------------------
+Third-party attribution
+--------------------------------------------------------------------------------
+
+AppTrace's design was informed by a research spike over two Apache-2.0 licensed
+open-source projects. No source code was copied from either. The concepts that
+were adopted, adapted or rejected are documented in docs/RESEARCH.md, and this
+file records the attribution.
+
+1. Bulk Crap Uninstaller (BCU)
+   https://github.com/BCUninstaller/Bulk-Crap-Uninstaller
+   Copyright Marcin Szeniak and contributors
+   Licensed under the Apache License, Version 2.0.
+
+   Concepts adopted or adapted (see docs/RESEARCH.md section 1):
+     - a signed evidence score with explicit, tabulated weights, in which
+       evidence can also reduce confidence
+       (source/UninstallTools/Junk/Confidence/ConfidenceRecords.cs,
+        source/UninstallTools/Junk/Confidence/ConfidenceCollection.cs)
+     - mapping an evidence score onto a small coarse enum rather than exposing a
+       numeric confidence
+       (source/UninstallTools/Junk/Confidence/ConfidenceLevel.cs)
+     - treating certain directory names as carrying no identity information
+       (source/UninstallTools/UninstallToolsGlobalConfig.cs)
+     - penalising a candidate location that another installed application
+       already uses
+       (source/UninstallTools/Junk/Finders/JunkCreatorBase.cs)
+
+   Concepts deliberately not adopted: fuzzy (Sift4) name matching, single-owner
+   result objects without sizes, and explanation as a preformatted string.
+
+2. Jharu
+   https://github.com/riponcm/Jharu
+   Copyright riponcm and contributors
+   Licensed under the Apache License, Version 2.0.
+
+   Concepts adopted or adapted (see docs/RESEARCH.md section 2):
+     - treating an unreadable location as a lower bound on size and reporting it,
+       rather than silently reporting zero
+       (src-tauri/src/scanner.rs)
+     - tracking an exclusive byte count separately from a total so shared data is
+       never double counted, and documenting the difference
+       (src-tauri/src/models.rs)
+     - a reliability signal that licenses the tool to decline to make a claim
+       (src-tauri/src/models.rs)
+     - not nesting parallel work around an already-parallel directory walk
+       (src-tauri/src/scanner.rs)
+
+   Concepts deliberately not adopted: hard-coded application/path rule tables,
+   identity from normalized-name substring matching, single-boolean confidence,
+   and enforcing the trust boundary in the UI layer.
+
+--------------------------------------------------------------------------------
+Upstream licence texts
+--------------------------------------------------------------------------------
+
+Both projects are licensed under the Apache License, Version 2.0, whose full text
+is included in this repository as LICENSE. Their own NOTICE and licence files
+should be consulted for the full list of their contributors:
+
+  https://github.com/BCUninstaller/Bulk-Crap-Uninstaller/blob/master/Licence.txt
+  https://github.com/BCUninstaller/Bulk-Crap-Uninstaller/blob/master/NOTICE
+  https://github.com/riponcm/Jharu/blob/main/LICENSE
+
+No source code from either project is present in this repository. Their licences
+impose no obligations here beyond the attribution recorded above.

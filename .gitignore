@@ -1,0 +1,55 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userprefs
+
+# IDE / editor state
+.vs/
+.idea/
+.vscode/
+*.swp
+*~
+
+# Test and coverage artifacts
+TestResults/
+*.trx
+*.coverage
+coverage*.xml
+coverage*.json
+
+# Evaluation harness output. The harness writes its reports next to the test
+# binaries, which bin/ and obj/ already exclude; these patterns are a safety net
+# for reports written anywhere else. The evaluation *fixtures* under
+# tests/AppTrace.Core.Tests/Evaluation/ are source and must stay tracked, which is
+# why there is deliberately no `evaluation/` directory rule here.
+*-report.txt
+
+# Temporary probes and one-off scripts used during development
+/tmp/
+/scratch/
+*.tmp
+
+# Local scan output. A full scan of a real machine is a complete software
+# inventory and can be hundreds of megabytes; it is useful locally and must never
+# be published. The deterministic fixtures under tests/ are the tracked equivalent.
+scan.json
+scan*.json
+*sample-scan*.json
+evidence-probe.md
+samples/
+
+# Logs and crash artifacts
+*.log
+*.dmp
+*.etl
+*.wer
+crashdumps/
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store

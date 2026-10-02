@@ -58,6 +58,14 @@ public static class EvidenceWeights
         // zero is explicit rather than accidental.
         EvidenceType.SubjectNameMatch => 0,
 
+        // Provenance from Windows itself (Task 07). Weaker than a declared install
+        // location, because a service or a shortcut proves the application reaches a
+        // file rather than that it owns the directory containing it, and stronger
+        // than inherited ownership, because it is an independent registration rather
+        // than an inference from scope.
+        EvidenceType.DisplayIconMatch => 60,
+        EvidenceType.ProvenanceAnchorMatch => 50,
+
         // Identity: strong name identity.
         EvidenceType.ExactDirectoryNameMatch => 40,
         EvidenceType.ExecutableMetadataMatch => 40,

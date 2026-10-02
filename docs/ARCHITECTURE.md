@@ -182,9 +182,11 @@ destroy the explanation.
 
 ## 5. Attribution pipeline
 
-`AttributionEngine.Evaluate` runs a fixed list of detectors over one directory.
-Each may emit evidence for any number of applications, because a location
-legitimately has several plausible owners.
+Before attribution runs, provenance discovery reads the static Windows
+registrations once and indexes them (see section 5a). The engine then runs a fixed
+list of detectors over one directory, each of which may emit evidence for any
+number of applications, because a location legitimately has several plausible
+owners.
 
 | Detector | Evidence it can emit | Weight |
 | --- | --- | --- |
@@ -199,6 +201,7 @@ legitimately has several plausible owners.
 | Product code | `ProductCodeMatch` | +55 |
 | Registry cross-reference | `RegistryReference` (reserved) | +45 |
 | Bounding | `MultipleCandidateOwners` / `PublisherMismatch` / `ConflictingApplicationMatch` | −15 / −22 / −25 |
+| Provenance (Task 07) | `DisplayIconMatch` / `ProvenanceAnchorMatch` | +60 / +50 |
 | Relationship (not scored) | `SubjectNameMatch` | 0 |
 
 Detector order matters in one place: `CollectInheritedOwnershipEvidence` runs
@@ -283,6 +286,57 @@ cannot weigh it, and the measured false positives (`node`, `sdk`, `helper`, `too
 A `RelatedTo` candidate is never accepted, never classified, never scored, and
 never receives bytes. Its evidence lives in `RelationshipEvidence`, a separate list
 from `Evidence` precisely so it cannot be summed into an ownership claim.
+
+### 5a. Static provenance sources (Task 07)
+
+The question these answer is not *"does this path look like an application"* but
+*"can Windows itself show that the application actually reaches it"*. Discovery runs
+**once per scan**, indexes the anchors, and attribution then queries the index; it
+never enumerates services or tasks per directory.
+
+Every source below proves something narrow, and only the narrow statement is used.
+
+| Source | What it proves | What it does not prove |
+| --- | --- | --- |
+| `DisplayIcon` | This uninstall entry references this executable or resource | That the application owns the referenced file's ancestors |
+| App Paths | Windows registers this executable name at this path | Which installed product the executable belongs to |
+| Service `ImagePath` | This service launches this executable | That the application owns the service's other data, or that the service name is product identity |
+| Scheduled task action | This task launches or references this executable | That the task name is product identity, or that the task owns anything |
+| Run key | Windows starts this executable for this user or machine | That the entry's display name is product identity |
+| Shortcut target | This shortcut targets this executable or path | That the shortcut's display name is identity, or that a launcher/updater target is the product |
+
+**What none of them prove:** that an application owns every ancestor directory of a
+referenced file, or that a publisher owns every path containing its name. A
+registration shows the application *reaches* a path, which is exactly the claim the
+ladder treats as provenance.
+
+**Linkage is conservative and ordered.** A registration is linked to an installed
+application only when one of these holds, and the reason is recorded in the
+explanation:
+
+1. the file sits inside the application's own registered install location — no name
+   resemblance involved;
+2. the file's own version metadata names the application, by whole words only;
+3. the file name matches the application's name exactly and the name is not a single
+   generic token.
+
+Anything else is refused and counted. Task 02's measurement is why: a bare
+executable file name is not product identity, since `electron.exe` carries
+`CompanyName = "GitHub, Inc."` while living inside DaVinci Resolve.
+
+**Discovery is not inventory.** Task 02 measured 45 App Paths, 56 non-Windows
+service paths, 96 task paths, 18 Run entries and 227 shortcuts on a modest machine.
+Creating an installed application from each would be absurd, so these sources only
+ever link to an application discovery already found.
+
+**Failure tolerance.** One unreadable key, one malformed command, one unparseable
+task, one broken shortcut or one file that disappeared after registration costs an
+anchor and a diagnostic, never the scan.
+
+**Read-only.** Every key is opened with `ReadSubTree`. Nothing is executed except
+`schtasks /query /xml ONE`, which is an export: it runs no task and changes nothing.
+Shortcuts are resolved through the Windows shell's own COM interface, which needs no
+third-party runtime.
 
 ### Name matching, and why it is strict
 

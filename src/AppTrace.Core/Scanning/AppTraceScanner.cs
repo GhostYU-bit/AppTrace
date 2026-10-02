@@ -26,6 +26,7 @@ public sealed class AppTraceScanner
     private readonly ScanOptions _options;
     private readonly DirectoryWalker _walker;
     private readonly AttributionEngine _engine;
+    private readonly ProvenanceYield? _provenanceYield;
 
     private readonly Dictionary<string, long> _measuredByNormalizedPath = new(StringComparer.Ordinal);
 
@@ -35,14 +36,39 @@ public sealed class AppTraceScanner
     public AppTraceScanner(
         IReadOnlyList<AppIdentity> apps,
         ScanOptions? options = null,
-        DirectoryWalker? walker = null)
+        DirectoryWalker? walker = null,
+        ProvenanceIndex? provenance = null,
+        ProvenanceYield? provenanceYield = null)
     {
         _apps = apps;
         _options = options ?? ScanOptions.Default;
         _walker = walker ?? new DirectoryWalker(_options.Limits);
+        _provenanceYield = provenanceYield;
         _engine = new AttributionEngine(
             apps,
-            new AttributionOptions { MaxExecutableProbes = _options.Limits.MaxDirectories > 0 ? 500 : 0 });
+            new AttributionOptions { MaxExecutableProbes = _options.Limits.MaxDirectories > 0 ? 500 : 0 },
+            provenance);
+    }
+
+    /// <summary>Per-source provenance counts, when provenance discovery was run.</summary>
+    public ProvenanceYield? ProvenanceYield => _provenanceYield;
+
+    /// <summary>
+    /// Discovers and indexes every static Windows provenance anchor for the
+    /// discovered applications.
+    /// </summary>
+    /// <remarks>
+    /// Separated from the constructor because it reads the registry, the task store
+    /// and the shell, and a caller that only wants name-based attribution should not
+    /// pay for or depend on that. Discovery runs once, its anchors are indexed once,
+    /// and attribution then queries the index cheaply.
+    /// </remarks>
+    public static (ProvenanceIndex Index, ProvenanceYield Yield, IReadOnlyList<ScanError> Errors) DiscoverProvenance(
+        IReadOnlyList<AppIdentity> apps)
+    {
+        var discovery = new ProvenanceDiscovery();
+        var anchors = discovery.Discover(apps);
+        return (new ProvenanceIndex(anchors), discovery.Yield, discovery.Errors);
     }
 
     public ScanResult Scan(IReadOnlyList<ScanRoot> roots)

@@ -91,13 +91,25 @@ internal static class Program
         var stopwatch = Stopwatch.StartNew();
         var registry = new UninstallRegistry();
         var apps = registry.Discover();
-        var scanner = new AppTraceScanner(apps, options);
+
+        // Provenance discovery reads the registry, the task store and the shell once,
+        // and indexes the result. It is failure-tolerant: an unreadable registration
+        // costs an anchor, never the scan.
+        var (provenance, provenanceYield, provenanceErrors) = AppTraceScanner.DiscoverProvenance(apps);
+
+        var scanner = new AppTraceScanner(apps, options, provenance: provenance, provenanceYield: provenanceYield);
         var scan = scanner.Scan(roots);
         stopwatch.Stop();
 
         if (!json)
         {
             Console.Error.WriteLine($"Discovered {apps.Count} applications in {stopwatch.Elapsed.TotalSeconds:0.##} s.");
+            Console.Error.WriteLine(
+                $"Provenance anchors: {provenance.Count} path(s) Windows itself shows these applications reaching.");
+            foreach (var error in provenanceErrors.Take(3))
+            {
+                Console.Error.WriteLine($"  note: {error.Stage}: {error.Message}");
+            }
         }
 
         var report = FootprintReport.Build(scan);

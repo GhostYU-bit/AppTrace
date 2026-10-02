@@ -168,11 +168,11 @@ high-confidence human judgement.
 
 ## Current baseline
 
-Measured after Task 06 (Ownership Propagation & Relationship Model).
+Measured after Task 07 (Static Provenance Enrichment).
 
 ```text
 Corpus
-  total cases                           26   (24 + 2 synthetic relationship cases)
+  total cases                           26
   desired outcome met                   23
   wrong-owner HIGH/CONFIRMED claims      0 of 4 confident claims
   unsupported ownership claims           1   (the Oxford publisher root)
@@ -189,45 +189,47 @@ Real machine (hand-labelled)
   false negatives                        1   (a Steam soundtrack path)
 ```
 
-History, so the trend is visible:
+These two sets are **unchanged by Task 07, deliberately**. Both are evaluated
+through fixtures with executable probing disabled and no provenance index, so their
+numbers cannot depend on which registrations happen to exist on the machine running
+them. That is what makes them a regression harness rather than a machine snapshot.
 
-| | Task 03 | Task 04 | Task 05 | Task 06 |
-| --- | --- | --- | --- | --- |
-| Corpus: desired met | 9 | 9 | 21 | **23 of 26** |
-| Corpus: wrong-owner HIGH/CONFIRMED | 11 of 20 | 0 of 4 | 0 of 4 | 0 of 4 |
-| Corpus: unsupported claims | 9 | 9 | 1 | **1** |
-| Real machine: wrong-owner HIGH/CONFIRMED | 2 of 22 | 1 of 15 | 1 of 15 | 1 of 15 |
-| Real machine: unsupported claims | 2 | 2 | 1 | **1** |
+Task 07's effect shows up in a **live scan**, which is what it is for:
 
-Task 06 changes no ownership answer on either set. That is the intended result: it
-adds a *second* kind of claim alongside ownership rather than re-deciding the first.
-The two corpus cases it resolves are the synthetic relationship pair it introduces.
+```text
+Live scan of %LOCALAPPDATA% (198 applications discovered)
 
-Four things are worth understanding before reading those as a score:
+  Vivaldi profile directory   -> HIGH   (DisplayIconMatch + 3 anchors)
+  JDownloader 2               -> CONFIRMED, previously unattributed
+  unknown/unattributed        -> unchanged, no owner lost
+  all seven Task 05 refusals  -> still refused
+```
 
-* **The corpus grew by two cases.** `REL-SUBJECT-DATA-SYNTHETIC` (a generic
-  `OwnerApp\Recommendations\Related Product` shape, proving `Owns` + `RelatedTo`
-  with no product-specific rule) and `REL-NO-OWNER-NO-RELATION` (proving no
-  relationship is invented where nothing owns the path). Percentages before and
-  after Task 06 are therefore over different denominators.
-* **The two real NVIDIA cases remain unresolved, and not because the model is
-  missing.** The corpus fixture lacks any evidence that NVIDIA App owns the
-  ancestor: `NVIDIA App 11.0.9.251` normalizes to `nvidia`, which is one word of a
-  one-word name and is not treated as product identity at that depth; and its only
-  registered install location is under `Program Files`. The real machine agrees —
-  that ancestor is `UNKNOWN` there too. Task 07 provenance is what would close it.
-* **No relationship is reported on the real machine, and that is correct.** The
-  scan finds only two subject-store directories (`Recommendations`) and neither has
-  an accepted owner, so there is nothing for a related application to be relative
-  to. Reporting one anyway would be exactly the fabricated claim §10 forbids.
-* **The one remaining unsupported claim** is
-  `C:\Program Files (x86)\Oxford University Press`, CONFIRMED because the product
-  registers that publisher-level directory as its install location. It is a
-  *provenance* defect, not a confidence, semantics or relationship one.
+Provenance yield for that machine, and the number that matters:
 
-`RelatedTo` never affects `ExclusiveSizeBytes`. The accounting invariant
-`sum(ExclusiveSizeBytes) == TotalMeasuredBytes` is asserted as before, and the
-end-to-end check on a real scan passes.
+```text
+DisplayIcon      198 records -> 76 anchors,  99 resource-only or unresolvable
+App Paths         92 records -> 27 anchors,  12 malformed
+Services         798 with ImagePath -> 56 non-system -> 14 anchors
+Scheduled tasks  212 tasks, 98 Exec actions   (source unavailable under the
+                                               sandbox these tests ran in)
+Run keys          20 records -> 10 anchors
+Shortcuts        277 found -> 272 resolved -> 127 anchors
+
+208 registrations resolved to a path and linked to no application.
+```
+
+The last line is the honest one. **Discovery volume is not attribution success**: the
+only meaningful figure is how many anchors could be *defensibly* linked to an
+installed application, and most registrations on a real machine cannot be.
+
+### Why a fixture harness and a live scan disagree
+
+They measure different things. The fixture sets answer "is the attribution logic
+right?" against fixed inputs, so a Task 07 source cannot move them without changing
+the logic — which is exactly the property that makes them useful. A live scan answers
+"what does AppTrace find on this machine?", where provenance genuinely adds owners.
+Both numbers are reported because neither alone is the whole picture.
 
 ---
 

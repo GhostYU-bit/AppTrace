@@ -44,9 +44,13 @@ internal static class Fixtures
         IReadOnlyList<AppIdentity> apps,
         LocationCategory category = LocationCategory.ProgramFiles,
         IReadOnlyList<string>? acceptedAncestors = null,
-        IReadOnlyList<OwnedAncestor>? ownedAncestors = null)
+        IReadOnlyList<OwnedAncestor>? ownedAncestors = null,
+        Discovery.ProvenanceIndex? provenance = null)
     {
-        var engine = new AttributionEngine(apps, new AttributionOptions { MaxExecutableProbes = 0 });
+        var engine = new AttributionEngine(
+            apps,
+            new AttributionOptions { MaxExecutableProbes = 0 },
+            provenance);
         var normalized = TextNormalizer.NormalizePath(path);
 
         return engine.Evaluate(new AttributionInput

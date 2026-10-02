@@ -1798,3 +1798,133 @@ Task 07 provenance sources, no signer analysis, no MSIX, no Steam/Epic manifests
 no runtime monitoring, no product-specific exception, and no graph or rules engine.
 Steam is deliberately **not** special-cased: the soundtrack recall loss from Task 05
 stays a loss, and `RelatedTo` was not used as a loophole to restore it.
+
+---
+
+## Task 07 as built — Static Provenance Enrichment
+
+> **Do not merely ask whether a path looks like an application. Ask whether Windows
+> itself can show that the application actually reaches it.**
+
+```text
+Installed App Identity
+        ↓
+Static Windows registrations
+        ↓
+Executable / Path Anchors
+        ↓
+Identity Validation
+        ↓
+Provenance Evidence
+        ↓
+Existing Candidate / Ownership Pipeline
+```
+
+### The epistemic rule
+
+A registration proves only what it says. `DisplayIcon` proves the uninstall entry
+references a file; a service proves it launches a file; a task proves it runs one; a
+Run key proves Windows starts one; a shortcut proves it targets one; App Paths proves
+Windows resolves a name to one. **None proves that the application owns the
+referenced file's ancestors, and none makes a registration's own name into product
+identity.**
+
+### Sources implemented
+
+| Source | Yield on the development machine |
+| --- | --- |
+| `DisplayIcon` | 198 records, 76 valid executable paths, 76 anchors; 99 resource-only or unresolvable |
+| App Paths | 92 records across 3 surfaces, 27 anchors, 12 malformed |
+| Services | 798 with `ImagePath`, 56 non-system, **14 anchors** |
+| Scheduled tasks | 212 tasks, 98 `Exec` actions, 98 path records, *unavailable under the sandbox used for these tests* |
+| Run keys | 20 records across 3 surfaces, 19 path-bearing, 10 anchors |
+| Shortcuts | 277 found, 272 resolved, 5 broken, 127 anchors |
+
+**208 registrations resolved to a path but linked to no application.** That number is
+the point: discovery volume is not attribution success, and the only number that
+matters is how many anchors could be *defensibly* linked.
+
+Roles were classified as MainApplication 154, Uninstaller 32, Launcher 25,
+Helper 14, Updater 6. The 32 uninstallers and 6 updaters are real anchors — the
+application does reach those files — but they are marked in the explanation so they
+are not read as the product's own executable.
+
+### What Task 07 changed in the engine
+
+One detector, `CollectProvenanceAnchorEvidence`, emitting `DisplayIconMatch` (+60)
+and `ProvenanceAnchorMatch` (+50) as **Provenance**. It proposes; the ladder decides.
+
+Two supporting corrections were needed, and both are general rather than
+provenance-specific:
+
+* **Positional suppression can be lifted for an independently proposed candidate.**
+  A product root two levels below a scan root previously could not reach HIGH however
+  many registrations pointed at it, because `HIGH = provenance + corroborating
+  identity` and the identity half was being suppressed by position alone. Suppression
+  now distinguishes two reasons: a segment inside `node_modules` or a package cache is
+  a *package name* and is never lifted, while a merely *deep* segment may corroborate
+  a candidate that provenance, a registration or an ancestor already proposed — and
+  only when the name accounts for at least half of what the directory says.
+* **`vendor` was removed from the structure anchors.** It is a dependency directory in
+  some ecosystems, but it is also one of the commonest vendor-namespace names in
+  `Program Files`, and the two are indistinguishable by name. Treating it as a
+  dependency tree made every product directory below `Program Files\Vendor` invisible.
+
+The near-miss rule also learned that a leftover explained entirely by the
+application's own display name is not an extra word: `Vendor App` is the product
+`Vendor`, whereas the `II` in `Cities Skylines II` is not in the display name and
+remains a near miss.
+
+### Results
+
+* **No false positive was reopened.** All seven Task 05 refusals remain refused, and
+  all Task 06 relationship semantics are intact.
+* **No known-good owner was lost**, and no previously-owned location became UNKNOWN.
+* **Vivaldi's profile directory is HIGH on a real scan**, with `DisplayIconMatch` plus
+  three anchors, and one previously unattributed owner worked.
+
+### NVIDIA: the evidence genuinely does not exist
+
+Revisited after enrichment, and the answer is decisive. Every one of the 18 NVIDIA
+uninstall entries — including `NVIDIA App 11.0.9.251` — carries
+`DisplayIcon = ...\Installer2\InstallerCore\NVI2.dll,0`: a **shared installer
+library**, not the application. No Task 07 source connects NVIDIA App identity to
+`NVIDIA App.exe`, to its real executable directory, or to the AppData tree. The
+registrations that exist prove things about the *installer*, which is why every
+NVIDIA anchor lands there and none reaches the subject store.
+
+So the AppData tree stays UNKNOWN, and because it has no owner, no `RelatedTo` is
+asserted. What is missing is a source that names the application's own executable
+rather than its installer's — the App Paths entry that NVIDIA does not write, or a
+shortcut or Run entry that points at `NVIDIA App.exe` rather than at `NVI2.dll`. An
+NVIDIA-specific alias or path rule would be exactly the hack §15 forbids.
+
+### Oxford: unchanged, and correctly so
+
+Revisited, and no provenance contradicts the declared install location: no
+executable anchor identifies a more specific product directory. Per §17 the claim is
+left alone rather than weakened for one case.
+
+### Identity normalization: NVIDIA is the only demonstrated case
+
+§16 asked whether stripping `App`, `Application`, `Helper` and similar destroys
+meaningful product identity, and whether that is a repeated generic defect. On this
+machine it is not: of the NVIDIA entries, only the product literally named
+`NVIDIA App 11.0.9.251` is affected by the `app` token, and the same normalization is
+what correctly keeps `ASUS Update Helper` at two segments. **No normalization
+redesign was performed**, because one product is not a pattern and a product-specific
+alias table would be a worse failure than the loss it fixes.
+
+### Performance
+
+Discovery is about **1.1 s** for 198 applications, including up to 400 bounded
+metadata reads, and it happens once. A full `%LOCALAPPDATA%` scan takes roughly 15 s
+end to end. Nothing is enumerated per directory.
+
+### What is deliberately not here
+
+No Authenticode or signer analysis, no MSIX package-family mapping, no Steam or Epic
+manifests, no USN, ETW or runtime observation, no orphan detection, no GUI, no graph
+database, no cloud or telemetry, and **no product-specific alias or path database**.
+No third-party runtime dependency was added: shortcuts are resolved through the
+Windows shell's own COM interface, which was verified before being adopted.

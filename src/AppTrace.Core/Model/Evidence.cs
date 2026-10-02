@@ -167,6 +167,32 @@ public enum EvidenceType
     /// to ownership of that tree.
     /// </remarks>
     SubjectNameMatch,
+
+    /// <summary>
+    /// The application's own uninstall entry references this file through its
+    /// <c>DisplayIcon</c> value. Task 07.
+    /// </summary>
+    /// <remarks>
+    /// The strongest of the static provenance records for linkage, because the
+    /// registration <em>is</em> the application's own entry. It still proves only
+    /// what it says: that the entry references this file, not that the application
+    /// owns the file's ancestors.
+    /// </remarks>
+    DisplayIconMatch,
+
+    /// <summary>
+    /// Windows itself shows this application reaching this path, through an App
+    /// Paths entry, a service, a scheduled task, a startup entry or a shortcut.
+    /// Task 07.
+    /// </summary>
+    /// <remarks>
+    /// <para>What it proves: the application is independently known to launch from,
+    /// register or reference the path.</para>
+    /// <para>What it does not prove: that the application owns every ancestor
+    /// directory, or that a publisher owns every path containing its name. Those are
+    /// separate claims, and this record does not make them.</para>
+    /// </remarks>
+    ProvenanceAnchorMatch,
 }
 
 /// <summary>How much a single piece of evidence should move the confidence score.</summary>

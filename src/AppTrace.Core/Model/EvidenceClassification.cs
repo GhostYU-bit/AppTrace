@@ -78,6 +78,16 @@ public static class EvidenceClassification
         // claim.
         EvidenceType.InheritedFromOwner => EvidenceKind.Provenance,
 
+        // ---- Provenance from Windows itself (Task 07) ---------------------------
+        // These are the records that answer "can Windows show that the application
+        // actually reaches this path", which is a different and stronger question
+        // than "does this path look like the application". They are Provenance for
+        // the same reason DeclaredInstallLocation is: they were written by the
+        // application's own installation or by Windows on its behalf, not inferred
+        // from a name.
+        EvidenceType.DisplayIconMatch => EvidenceKind.Provenance,
+        EvidenceType.ProvenanceAnchorMatch => EvidenceKind.Provenance,
+
         // ---- Contradiction: what argues against the claim? --------------------
         EvidenceType.PublisherMismatch => EvidenceKind.Contradiction,
         EvidenceType.ConflictingApplicationMatch => EvidenceKind.Contradiction,

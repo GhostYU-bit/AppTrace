@@ -171,13 +171,24 @@ public sealed class AttributionEngine
     /// <summary>Folded publisher → applications from that publisher.</summary>
     private readonly Dictionary<string, List<AppIdentity>> _appsByPublisherToken = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Paths Windows itself shows each application reaching, discovered once per
+    /// scan. Empty when provenance discovery was not run, in which case the engine
+    /// behaves exactly as it did before Task 07.
+    /// </summary>
+    private readonly Discovery.ProvenanceIndex _provenance;
+
     private readonly AttributionOptions _options;
     private readonly Dictionary<string, ExecutableProbe> _executableProbeCache = new(StringComparer.OrdinalIgnoreCase);
     private int _executableProbes;
 
-    public AttributionEngine(IReadOnlyList<AppIdentity> apps, AttributionOptions? options = null)
+    public AttributionEngine(
+        IReadOnlyList<AppIdentity> apps,
+        AttributionOptions? options = null,
+        Discovery.ProvenanceIndex? provenance = null)
     {
         _apps = apps;
+        _provenance = provenance ?? Discovery.ProvenanceIndex.Empty;
         _appsById = new Dictionary<string, AppIdentity>(StringComparer.Ordinal);
         foreach (var app in apps)
         {
@@ -243,6 +254,7 @@ public sealed class AttributionEngine
 
         CollectDeclaredInstallLocationEvidence(input, evidenceByApp);
         CollectInheritedOwnershipEvidence(input, evidenceByApp);
+        CollectProvenanceAnchorEvidence(input, evidenceByApp);
         CollectNameEvidence(input, evidenceByApp);
         CollectPublisherEvidence(input, evidenceByApp);
         CollectContextEvidence(input, evidenceByApp);
@@ -413,11 +425,6 @@ public sealed class AttributionEngine
     /// </remarks>
     private void CollectNameEvidence(AttributionInput input, Dictionary<string, List<Evidence>> evidenceByApp)
     {
-        if (!MaySegmentNameItsOwnProduct(input))
-        {
-            return;
-        }
-
         if (GenericDirectoryNames.IsGeneric(input.DirectoryName))
         {
             return;
@@ -429,6 +436,24 @@ public sealed class AttributionEngine
         {
             return;
         }
+
+        // Structural suppression is checked before anything else and is never lifted.
+        // A segment inside a dependency tree, a package cache or an embedded runtime is
+        // a package or component name, and no registration elsewhere turns a package
+        // name into a product name. This must come first because the exact-name
+        // shortcut below would otherwise return before it was ever consulted.
+        if (IsStructurallySuppressed(input))
+        {
+            return;
+        }
+
+        // Snapshot which applications independent evidence has already proposed,
+        // before this detector adds anything. The name evidence added below must never
+        // count as its own justification.
+        var proposedIndependently = evidenceByApp
+            .Where(kv => kv.Value.Any(e => e.SupportsAttribution && e.Kind != EvidenceKind.Identity))
+            .Select(kv => kv.Key)
+            .ToHashSet(StringComparer.Ordinal);
 
         // Indexed candidate generation: only applications whose folded name or
         // tokens actually relate to this segment are even considered.
@@ -458,7 +483,24 @@ public sealed class AttributionEngine
                 continue;
             }
 
-            if (IsNearMiss(input.DirectoryName, app))
+            // A deep segment may not propose an application on its own, but it may
+            // corroborate one that independent evidence already proposed. Positional
+            // suppression exists to stop a name coincidence from *creating* a
+            // candidate; it was never meant to stop a candidate from being confirmed
+            // by a name that genuinely agrees with it. Without this, a product root
+            // two levels below a scan root could never reach HIGH however strong its
+            // Windows registrations were, because provenance alone is capped at
+            // MEDIUM by design.
+            // Lifting positional suppression is what lets a product root two levels
+            // below a scan root reach HIGH: provenance proposes it, and its own name
+            // then corroborates. Structural suppression was already handled above and
+            // is never lifted.
+            if (!MaySegmentNameItsOwnProduct(input) && !proposedIndependently.Contains(app.Id))
+            {
+                continue;
+            }
+
+            if (IsNearMiss(input, app))
             {
                 // "Cities Skylines II" is not "Cities: Skylines". When the best
                 // available explanation requires discarding part of the directory
@@ -522,6 +564,121 @@ public sealed class AttributionEngine
         var semantics = PathSemantics.Analyse(input.NormalizedPath, input.NormalizedScanRoot, input.Depth);
         return !PathSemantics.SuppressesIdentityForLeaf(semantics);
     }
+
+    /// <summary>
+    /// True when the directory's name is suppressed because it is content of an
+    /// established structure.
+    /// </summary>
+    /// <remarks>
+    /// The one reason for suppression that is never lifted. A segment inside
+    /// <c>node_modules</c>, a package cache or an embedded runtime is a package or
+    /// component name, and no registration elsewhere makes a package name into a
+    /// product name.
+    /// </remarks>
+    private static bool IsStructurallySuppressed(AttributionInput input)
+    {
+        var semantics = PathSemantics.Analyse(input.NormalizedPath, input.NormalizedScanRoot, input.Depth);
+        return PathSemantics.SuppressedByStructureForLeaf(semantics);
+    }
+
+    /// <summary>
+    /// True when evidence <em>other than a name resemblance</em> has already proposed
+    /// this application here.
+    /// </summary>
+    /// <remarks>
+    /// Positional suppression exists to stop a name coincidence from <em>creating</em>
+    /// a candidate. It must not stop a candidate that provenance, a registration or an
+    /// ancestor already proposed from being corroborated by a name that agrees with
+    /// it — otherwise a product root below the top of a scan root could never reach
+    /// HIGH however many Windows registrations pointed at it, because provenance alone
+    /// is capped at MEDIUM by design.
+    /// </remarks>
+    private static bool ProposedBySomethingOtherThanItsName(
+        Dictionary<string, List<Evidence>> evidenceByApp,
+        string appId)
+        => evidenceByApp.TryGetValue(appId, out var records)
+            && records.Any(e => e.SupportsAttribution && e.Kind != EvidenceKind.Identity);
+
+    /// <summary>
+    /// Proposes applications that Windows itself shows reaching this directory or a
+    /// path inside it.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The question this answers.</b> Not "does this path look like the
+    /// application", but "can Windows show that the application actually reaches it".
+    /// A service that launches a file here, a task that runs it, a startup entry that
+    /// starts it, a shortcut that targets it, an App Paths registration that resolves
+    /// to it, or the application's own uninstall entry referencing it, are all
+    /// independent registrations rather than name resemblances.</para>
+    /// <para><b>What it does not prove.</b> A registration is about the file it
+    /// names. It does not establish that the application owns every ancestor
+    /// directory, so this detector proposes a candidate for the directory the anchor
+    /// applies to and leaves the confidence ladder to decide how much that is worth.
+    /// Only an anchor that is genuinely <em>at or below</em> the directory, or a
+    /// declared install location, can carry a confident claim; a bare registration
+    /// with no matching identity stays at MEDIUM.</para>
+    /// <para>A low-value anchor — an updater or an uninstaller — is still reported,
+    /// because the application really does reach that path, but it is marked as such
+    /// in the explanation so it is not read as equivalent to the product's own
+    /// executable.</para>
+    /// </remarks>
+    private void CollectProvenanceAnchorEvidence(
+        AttributionInput input,
+        Dictionary<string, List<Evidence>> evidenceByApp)
+    {
+        var anchors = _provenance.ForDirectory(input.NormalizedPath);
+        if (anchors.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var anchor in anchors)
+        {
+            if (!_appsById.TryGetValue(anchor.AppId, out var app))
+            {
+                continue;
+            }
+
+            var roleNote = anchor.Role switch
+            {
+                Discovery.ExecutableRole.MainApplication => string.Empty,
+                Discovery.ExecutableRole.Unknown => string.Empty,
+                _ => $" (the file is an {anchor.Role} rather than the product's own executable)",
+            };
+
+            var pathRelative = RelativeTo(input.NormalizedPath, anchor.NormalizedPath);
+
+            Add(
+                evidenceByApp,
+                app,
+                anchor.Source == Discovery.ProvenanceSource.DisplayIcon
+                    ? EvidenceType.DisplayIconMatch
+                    : EvidenceType.ProvenanceAnchorMatch,
+                EvidenceStrength.Strong,
+                EvidenceSource.Registry,
+                $"{DescribeSource(anchor.Source)} shows \"{app.DisplayName}\" reaching " +
+                $"\"{anchor.Path}\", {pathRelative} this directory{roleNote}.",
+                true);
+        }
+    }
+
+    private static string RelativeTo(string directory, string anchoredPath)
+        => anchoredPath.StartsWith(directory + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            ? "inside"
+            : anchoredPath.Equals(directory, StringComparison.Ordinal)
+                ? "at"
+                : "containing";
+
+    private static string DescribeSource(Discovery.ProvenanceSource source) => source switch
+    {
+        Discovery.ProvenanceSource.DisplayIcon => "The application's own uninstall entry",
+        Discovery.ProvenanceSource.AppPath => "An App Paths registration",
+        Discovery.ProvenanceSource.Service => "A Windows service",
+        Discovery.ProvenanceSource.ScheduledTask => "A scheduled task",
+        Discovery.ProvenanceSource.RunKey => "A startup registration",
+        Discovery.ProvenanceSource.Shortcut => "A Start Menu shortcut",
+        _ => "A Windows registration",
+    };
 
     /// <summary>
     /// Carries ownership established at an ancestor down to this directory.
@@ -627,7 +784,7 @@ public sealed class AttributionEngine
             var appSegments = NameSegments(app.NormalizedName);
             if (appSegments.Count == 0
                 || !IsScopedNameMatch(directorySegments, appSegments)
-                || IsNearMiss(input.DirectoryName, app)
+                || IsNearMiss(input, app)
                 || !IsNameSpecificEnough(directorySegments, appSegments))
             {
                 continue;
@@ -811,16 +968,15 @@ public sealed class AttributionEngine
     /// is exactly how per-user data directories are named.</item>
     /// </list>
     /// </remarks>
-    private static bool IsNearMiss(string directoryName, AppIdentity app)
+    private static bool IsNearMiss(AttributionInput input, AppIdentity app)
     {
-        var directory = TextNormalizer.Fold(directoryName);
+        var directory = TextNormalizer.Fold(input.DirectoryName);
         var product = TextNormalizer.Fold(app.NormalizedName);
         if (directory.Length <= product.Length || !directory.Contains(product, StringComparison.Ordinal))
         {
             return false;
         }
 
-        var publisher = TextNormalizer.Fold(app.NormalizedPublisher);
         var remainder = directory.Replace(product, string.Empty, StringComparison.Ordinal);
         if (remainder.Length == 0)
         {
@@ -829,7 +985,63 @@ public sealed class AttributionEngine
 
         // A publisher prefix or suffix such as "microsoft" or "adobe" explains the
         // extra words and is not a near miss.
-        return publisher.Length == 0 || !publisher.Contains(remainder, StringComparison.Ordinal);
+        var publisher = TextNormalizer.Fold(app.NormalizedPublisher);
+        if (publisher.Length > 0 && publisher.Contains(remainder, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Something the application's own display name contains also explains it.
+        // NormalizeDisplayName drops generic tokens, so "Vendor App" normalizes to
+        // "vendor" and the leftover "app" comes from the application's own name rather
+        // than from the directory saying something extra. An unrelated suffix such as
+        // the "II" in "Cities Skylines II" is not in the display name and still counts
+        // as a near miss.
+        var display = NameSegments(app.DisplayName);
+        if (display.Count > 0 && ExplainsRemainder(remainder, display))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// True when the leftover characters are entirely accounted for by these words.
+    /// </summary>
+    private static bool ExplainsRemainder(string remainder, IReadOnlyList<string> words)
+    {
+        foreach (var word in words.OrderByDescending(w => w.Length))
+        {
+            if (word.Length == 0)
+            {
+                continue;
+            }
+
+            if (remainder.Contains(word, StringComparison.Ordinal))
+            {
+                remainder = remainder.Replace(word, string.Empty, StringComparison.Ordinal);
+            }
+        }
+
+        return remainder.Length == 0;
+    }
+
+    /// <summary>
+    /// True when the leftover characters are exactly the dropped tokens.
+    /// </summary>
+    private static bool ExplainsRemainder(string remainder, List<string> dropped)
+    {
+        var ordered = dropped.OrderByDescending(t => t.Length).ToList();
+        foreach (var token in ordered)
+        {
+            if (remainder.Contains(token, StringComparison.Ordinal))
+            {
+                remainder = remainder.Replace(token, string.Empty, StringComparison.Ordinal);
+            }
+        }
+
+        return remainder.Length == 0;
     }
 
     /// <summary>

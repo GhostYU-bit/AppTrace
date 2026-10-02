@@ -60,6 +60,12 @@ Expect, in particular:
   else already owns sits inside a store whose entries refer to other products, and
   the entry names that product by more than one word. On many machines the answer
   is genuinely "none".
+* **Provenance linking is strict.** Windows registrations — App Paths, services,
+  scheduled tasks, startup entries, shortcuts and uninstall `DisplayIcon` values —
+  are discovered once and indexed, but each is linked to an installed application
+  only when the file sits in that application's install location, its own metadata
+  names the application, or its name matches exactly. Most registrations on a real
+  machine link to nothing, and that is reported rather than guessed.
 * **One known false positive remains.** `Program Files (x86)\Oxford University
   Press` is `CONFIRMED` because the product registers that publisher-level
   directory as its install location. Resolving it needs provenance sources that do
@@ -104,7 +110,7 @@ is opened read-only. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §8.
 ```powershell
 dotnet build AppTrace.sln -c Release
 
-# 166 tests: unit, regression corpus, and the hand-labelled evaluation harness
+# 228 tests: unit, regression corpus, and the hand-labelled evaluation harness
 dotnet test tests/AppTrace.Core.Tests
 ```
 

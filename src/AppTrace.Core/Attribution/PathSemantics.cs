@@ -90,7 +90,25 @@ public enum StructureKind
 /// <c>sdk</c> or <c>node</c> from being treated as an application name simply
 /// because the path above it is a cache, a dependency tree or a runtime.
 /// </param>
-public readonly record struct SegmentSemantics(string Segment, StructureKind Kind, bool SuppressesIdentity);
+/// <param name="SuppressedByStructure">
+/// True when the suppression comes from an established structure in the ancestry —
+/// the segment is <em>content</em> of a dependency tree, a cache or a runtime —
+/// rather than merely from its depth.
+/// </param>
+/// <remarks>
+/// The two reasons for suppression are not interchangeable. A deep segment is
+/// suppressed because it is probably naming a component of whatever contains it,
+/// which is a statement about <em>position</em>; a segment inside
+/// <c>node_modules</c> is suppressed because it is a package name, which is a
+/// statement about <em>meaning</em>. Only the positional reason may be lifted to let
+/// an independently proposed candidate be corroborated by its own name, because a
+/// package name is never a product name however it was proposed.
+/// </remarks>
+public readonly record struct SegmentSemantics(
+    string Segment,
+    StructureKind Kind,
+    bool SuppressesIdentity,
+    bool SuppressedByStructure = false);
 
 /// <summary>
 /// Reads a path the way a person does: as a sequence of meaning-carrying segments
@@ -123,7 +141,15 @@ public static class PathSemantics
         ["site-packages"] = StructureKind.PackageDependencyTree,
         ["dist-packages"] = StructureKind.PackageDependencyTree,
         ["bower_components"] = StructureKind.PackageDependencyTree,
-        ["vendor"] = StructureKind.PackageDependencyTree,
+
+        // "vendor" is deliberately NOT here. It is a dependency directory in some
+        // ecosystems, but it is also one of the commonest vendor-namespace names in
+        // Program Files, and the two are indistinguishable by name. Treating it as a
+        // dependency tree made every product directory below "Program Files\Vendor"
+        // invisible, which is a far worse failure than missing a dependency tree that
+        // "node_modules" and "site-packages" already cover in practice. Vendor
+        // namespaces are handled as ownership boundaries instead, where the evidence
+        // for them actually exists.
 
         // Package manager caches: the children are cache keys and packages.
         ["npm-cache"] = StructureKind.PackageManagerCache,
@@ -260,7 +286,13 @@ public static class PathSemantics
                 || (kind != StructureKind.Unknown && tooDeepForProductIdentity)
                 || tooDeepForProductIdentity;
 
-            result.Add(new SegmentSemantics(segment, kind, suppresses));
+            result.Add(new SegmentSemantics(
+                segment,
+                kind,
+                suppresses,
+                // Only an ancestor's established structure makes this segment
+                // content. Depth alone is about position, not about meaning.
+                SuppressedByStructure: ancestorEstablishedStructure));
 
             if (kind != StructureKind.Unknown)
             {
@@ -280,6 +312,18 @@ public static class PathSemantics
     /// </remarks>
     public static bool SuppressesIdentityForLeaf(IReadOnlyList<SegmentSemantics> semantics)
         => semantics.Count > 0 && semantics[^1].SuppressesIdentity;
+
+    /// <summary>
+    /// True when the directory's name is suppressed because it is content of an
+    /// established structure rather than merely because of where it sits.
+    /// </summary>
+    /// <remarks>
+    /// This is the reason that may never be lifted: inside <c>node_modules</c> or a
+    /// package cache, a segment is a package name, and no independent registration
+    /// makes a package name into a product name.
+    /// </remarks>
+    public static bool SuppressedByStructureForLeaf(IReadOnlyList<SegmentSemantics> semantics)
+        => semantics.Count > 0 && semantics[^1].SuppressedByStructure;
 
     /// <summary>
     /// True when the path is inside an established structure at or above the

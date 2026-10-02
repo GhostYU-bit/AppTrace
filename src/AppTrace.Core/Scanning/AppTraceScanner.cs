@@ -116,7 +116,8 @@ public sealed class AppTraceScanner
             depth: 0,
             parent: null,
             acceptedAncestors: [],
-            isScanRoot: true);
+            isScanRoot: true,
+            scanRoot: TextNormalizer.NormalizePath(root.Path));
     }
 
     /// <summary>
@@ -170,13 +171,19 @@ public sealed class AppTraceScanner
     /// never attributed to an application: it is a container that always gets
     /// partitioned, and its residual carries no owner.
     /// </param>
+    /// <param name="scanRoot">
+    /// Normalized path of the root this directory was reached from. Path semantics
+    /// uses it to know how deep a segment sits below the scope the scanner actually
+    /// judges, which is what makes "product level" a positional fact.
+    /// </param>
     private long ResolveDirectory(
         string path,
         LocationCategory category,
         int depth,
         string? parent,
         IReadOnlyList<string> acceptedAncestors,
-        bool isScanRoot = false)
+        bool isScanRoot = false,
+        string? scanRoot = null)
     {
         var normalized = TextNormalizer.NormalizePath(path);
         if (_measuredByNormalizedPath.TryGetValue(normalized, out var alreadyAccounted))
@@ -199,6 +206,7 @@ public sealed class AppTraceScanner
                 DirectoryName = directoryName,
                 Category = category,
                 AcceptedAncestorPaths = acceptedAncestors,
+                NormalizedScanRoot = scanRoot,
                 Depth = depth,
             });
 
@@ -247,7 +255,7 @@ public sealed class AppTraceScanner
             }
 
             childCount++;
-            accounted += ResolveDirectory(childPath, category, depth + 1, path, childAncestors);
+            accounted += ResolveDirectory(childPath, category, depth + 1, path, childAncestors, scanRoot: scanRoot);
         }
 
         var residual = measurement.SizeBytes - accounted;

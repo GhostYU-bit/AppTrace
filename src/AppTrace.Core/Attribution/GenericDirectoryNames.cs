@@ -3,32 +3,42 @@ namespace AppTrace.Core.Attribution;
 using AppTrace.Core.Model;
 
 /// <summary>
-/// Directory names that carry no product identity. A path segment such as
-/// <c>Common</c> or <c>Cache</c> must never be accepted as evidence that one
-/// product owns a directory, because every product on the machine may use it.
+/// Directory names that carry no product identity <em>wherever they appear</em>.
+/// A path segment such as <c>Common</c> or <c>Resources</c> must never be accepted
+/// as evidence that one product owns a directory, because every product on the
+/// machine may use it.
 /// </summary>
 /// <remarks>
-/// Bulk Crap Uninstaller calls the same idea <c>QuestionableDirectoryNames</c>
+/// <para>Bulk Crap Uninstaller calls the same idea <c>QuestionableDirectoryNames</c>
 /// (score -3 in <c>UninstallTools/UninstallToolsGlobalConfig.cs</c>, Apache-2.0).
 /// AppTrace uses a wider list and a harder penalty, following its stated
-/// preference for false negatives over false positives.
+/// preference for false negatives over false positives.</para>
+/// <para><b>This list is not the place to fix a false positive.</b> Since Task 05, a
+/// word whose meaning depends on <em>where</em> it appears belongs to
+/// <see cref="PathSemantics"/>, which knows that <c>Cache</c> as a product directory
+/// is identity while <c>Cache</c> nested inside another product's tree is not. Such
+/// words were removed from this list because keeping them here made the decision
+/// unconditional: a real product called <c>Cache</c> could never be identified at
+/// any depth, which is a false negative baked into a constant. Words stay here only
+/// when they are meaningless at every depth. <c>sdk</c>, <c>helper</c>, <c>node</c>,
+/// <c>tool</c>, <c>universal</c> and <c>zip</c> are deliberately absent as well:
+/// they are ambiguous rather than generic, and match specificity handles them.
+/// </para>
 /// </remarks>
 public static class GenericDirectoryNames
 {
     private static readonly HashSet<string> Exact = new(StringComparer.OrdinalIgnoreCase)
     {
-        "app", "apps", "application", "applications", "appdata", "bin", "cache",
-        "caches", "client", "clients", "common", "common files", "commonfiles",
-        "component", "components", "config", "configs", "configuration", "content",
-        "crashreports", "crash reports", "data", "database", "db", "default",
-        "desktop", "docs", "documents", "download", "downloads", "extensions",
-        "files", "framework", "frameworks", "helpers", "install", "installer",
-        "lib", "libs", "library", "local", "logs", "media", "microsoft", "modules",
-        "new folder", "packages", "plugins", "presets", "profiles", "programs",
-        "resources", "roaming", "runtime", "runtimes", "settings", "shared",
-        "shared files", "storage", "support", "sys", "system", "temp", "templates",
-        "themes", "tmp", "tools", "update", "updates", "updater", "user", "userdata",
-        "users", "web", "x64", "x86", "32", "64", "v2", "v3",
+        "app", "apps", "appdata", "bin", "client", "clients", "common",
+        "common files", "commonfiles", "component", "components", "config",
+        "configs", "configuration", "content", "crashreports", "crash reports",
+        "data", "database", "db", "default", "desktop", "docs", "documents",
+        "download", "downloads", "extensions", "files", "framework", "frameworks",
+        "helpers", "install", "installer", "lib", "libs", "library", "local",
+        "media", "microsoft", "modules", "new folder", "plugins", "presets",
+        "profiles", "programs", "resources", "roaming", "settings", "shared",
+        "shared files", "storage", "support", "sys", "system", "templates",
+        "themes", "user", "users", "web", "x64", "x86", "32", "64", "v2", "v3",
     };
 
     /// <summary>

@@ -182,14 +182,19 @@ public class AttributionRulesTests
 
     [Theory]
     [InlineData("Common")]
-    [InlineData("Cache")]
     [InlineData("Shared")]
-    [InlineData("Packages")]
+    [InlineData("Resources")]
     [InlineData("app-1.2.3")]
     [InlineData("1.0.0")]
     public void GenericDirectoryName_ProducesNoNameEvidence(string directoryName)
     {
-        var app = Fixtures.App(directoryName == "Cache" ? "Cache" : "Contoso Suite", "Contoso");
+        // "Cache", "Packages", "logs", "temp", "runtime" and "update" were removed
+        // from this list in Task 05. They are not meaningless at every depth: as a
+        // product-level directory for a product with that name they are legitimate
+        // identity, and PathSemantics now decides them by position instead. They are
+        // still refused here, because this path is nested inside another product's
+        // tree - see PathSemanticsTests for that distinction.
+        var app = Fixtures.App("Contoso Suite", "Contoso");
 
         var attribution = Fixtures.Evaluate($@"C:\Program Files\Contoso\{directoryName}", [app]);
 

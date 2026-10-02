@@ -98,7 +98,7 @@ is opened read-only. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §8.
 ```powershell
 dotnet build AppTrace.sln -c Release
 
-# 104 tests: unit, regression corpus, and the hand-labelled evaluation harness
+# 140 tests: unit, regression corpus, and the hand-labelled evaluation harness
 dotnet test tests/AppTrace.Core.Tests
 ```
 

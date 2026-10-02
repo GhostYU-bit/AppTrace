@@ -19,6 +19,10 @@ public class ConfidenceSemanticsTests
         // 38, which Phase 0 called HIGH. "This is an application-data location" is
         // true of nearly every path AppTrace inspects and says nothing about which
         // application owns a directory.
+        //
+        // Task 05 goes further than withholding HIGH: the name "node" accounts for
+        // one word of a five-word product name, so it is not distinctive enough to
+        // propose that product at all. Unknown, not Medium.
         var node = Fixtures.App("Node.js Krypton via nvm-windows", "OpenJS Foundation");
 
         var attribution = Fixtures.Evaluate(
@@ -26,8 +30,31 @@ public class ConfidenceSemanticsTests
             [node],
             LocationCategory.LocalAppData);
 
-        Assert.Equal(Classification.Medium, attribution.Classification);
+        Assert.Equal(Classification.Unknown, attribution.Classification);
         Assert.NotEqual(Classification.High, attribution.Classification);
+        Assert.NotEqual(Classification.Medium, attribution.Classification);
+        Assert.Empty(attribution.AcceptedOwners);
+    }
+
+    [Fact]
+    public void AGenericApplicationPathStillCapsAWeakNameMatchAtMedium()
+    {
+        // The Task 04 rule, isolated from Task 05's candidate generation: a name
+        // match that IS distinctive enough to propose an owner, but has nothing
+        // except "this is an application data area" behind it, is MEDIUM rather
+        // than HIGH.
+        var chrome = Fixtures.App("Google Chrome", "Google LLC");
+
+        var attribution = Fixtures.Evaluate(
+            @"C:\Users\user\AppData\Local\Chrome",
+            [chrome],
+            LocationCategory.LocalAppData);
+
+        var owner = Fixtures.Candidate(attribution, "Google Chrome");
+        Assert.NotNull(owner);
+        Assert.True(owner.Accepted);
+        Assert.Equal(Classification.Medium, owner.Classification);
+        Assert.False(attribution.OwnershipEstablished);
     }
 
     [Fact]

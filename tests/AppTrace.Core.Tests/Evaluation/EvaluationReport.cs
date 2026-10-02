@@ -79,7 +79,14 @@ internal sealed class EvaluationMetrics
             TotalCases = outcomes.Count,
             Met = outcomes.Count(o => o.Met),
             OwnerCorrect = outcomes.Count(o => o.OwnerMet),
-            WrongOwner = outcomes.Count(o => !o.OwnerMet && o.ExpectedOwner is not null),
+
+            // A wrong owner means the engine named a *different* owner. It must
+            // require that an owner was named at all: without that, a case where the
+            // engine accepted nobody is counted both here and as a false negative,
+            // which silently inflates the wrong-owner count and breaks the
+            // completeness invariant the evaluator asserts.
+            WrongOwner = outcomes.Count(o => !o.OwnerMet && o.ExpectedOwner is not null && o.Verdict.AcceptedOwners.Count > 0),
+
             CorrectUnknown = outcomes.Count(o => o.CorrectlyRefused),
             FalsePositives = outcomes.Count(o => o.ExpectedOwner is null && o.Verdict.AcceptedOwners.Count > 0),
             FalseNegatives = outcomes.Count(o => o.ExpectedOwner is not null && o.Verdict.AcceptedOwners.Count == 0),

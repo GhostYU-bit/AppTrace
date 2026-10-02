@@ -36,6 +36,17 @@ internal sealed class EvaluationOutcome
 
     public required EngineVerdict Verdict { get; init; }
 
+    /// <summary>
+    /// The engine's full attribution result for this path.
+    /// </summary>
+    /// <remarks>
+    /// Exposed so a test can assert on the whole candidate set rather than only on
+    /// the accepted owner. Task 05's guarantees are mostly about candidates that must
+    /// <em>not</em> be generated at all, which an accepted-owner summary cannot
+    /// express.
+    /// </remarks>
+    public LocationAttribution? Raw { get; init; }
+
     public string? ExpectedOwner { get; init; }
 
     public required string ExpectedBound { get; init; }
@@ -69,7 +80,20 @@ internal sealed class EvaluationOutcome
     /// </remarks>
     public bool CorrectlyRefused { get; init; }
 
-    public bool Met => OwnerMet && ClassificationMet && RelationMet;
+    /// <summary>
+    /// True when the engine agreed with the label, whether by attributing the
+    /// expected owner or by correctly refusing to name one.
+    /// </summary>
+    /// <remarks>
+    /// A correct refusal is a successful outcome, not an unmet expectation. When a
+    /// case is labelled "no owner", <see cref="OwnerMet"/> is false by construction,
+    /// so requiring it here would report every correct refusal as unresolved — which
+    /// hides exactly the progress that removing an unsupported ownership claim
+    /// represents. The two events stay separately tracked in
+    /// <see cref="OwnerMet"/> and <see cref="CorrectlyRefused"/> so owner precision
+    /// is still measured only over attributions.
+    /// </remarks>
+    public bool Met => (OwnerMet || CorrectlyRefused) && ClassificationMet && RelationMet;
 
     /// <summary>True when the engine named an owner that the label says does not own the path.</summary>
     public required bool WrongOwnerClaim { get; init; }
@@ -91,7 +115,16 @@ internal sealed class EvaluationOutcome
 /// </remarks>
 internal static class AttributionEvaluator
 {
-    public static EngineVerdict Verdict(string path, IReadOnlyList<CorpusApp> catalogue, IReadOnlyList<string> appIds, string category, IReadOnlyList<string> ancestors)
+    /// <summary>
+    /// Runs the engine for one path and returns both the summary verdict and the
+    /// raw attribution, so a test can assert on candidates that must not exist.
+    /// </summary>
+    public static (EngineVerdict Verdict, LocationAttribution Raw) Evaluate(
+        string path,
+        IReadOnlyList<CorpusApp> catalogue,
+        IReadOnlyList<string> appIds,
+        string category,
+        IReadOnlyList<string> ancestors)
     {
         var apps = appIds
             .Select(id => catalogue.First(a => a.Id == id))
@@ -109,7 +142,7 @@ internal static class AttributionEvaluator
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToArray();
 
-        return new EngineVerdict
+        var verdict = new EngineVerdict
         {
             Owner = accepted.Length == 1 ? accepted[0] : null,
             AcceptedOwners = accepted!,
@@ -127,11 +160,13 @@ internal static class AttributionEvaluator
                 .OrderBy(t => t.ToString(), StringComparer.Ordinal)
                 .ToArray(),
         };
+
+        return (verdict, delta);
     }
 
     public static EvaluationOutcome Run(CorpusCase testCase, CorpusDocument document)
     {
-        var verdict = Verdict(testCase.Path, document.Apps, testCase.Apps, testCase.Category, testCase.AcceptedAncestors);
+        var (verdict, raw) = Evaluate(testCase.Path, document.Apps, testCase.Apps, testCase.Category, testCase.AcceptedAncestors);
         var minimum = Parse(testCase.Desired.MinClassification);
         var allowed = ParseAll(testCase.Desired.AllowedClassifications);
 
@@ -142,6 +177,7 @@ internal static class AttributionEvaluator
             Path = testCase.Path,
             Reason = testCase.Reason,
             Verdict = verdict,
+            Raw = raw,
             ExpectedOwner = testCase.Desired.Owner,
             ExpectedBound = ClassificationComparison.Describe(minimum, allowed),
             ExpectedRelation = testCase.Desired.Relation,
@@ -159,7 +195,7 @@ internal static class AttributionEvaluator
 
     public static EvaluationOutcome Run(EvaluationCase testCase, EvaluationDocument document)
     {
-        var verdict = Verdict(testCase.Path, document.Apps, testCase.Apps, testCase.Category, testCase.AcceptedAncestors);
+        var (verdict, raw) = Evaluate(testCase.Path, document.Apps, testCase.Apps, testCase.Category, testCase.AcceptedAncestors);
         var minimum = Parse(testCase.MinClassification);
         var allowed = ParseAll(testCase.AllowedClassifications);
 
@@ -170,6 +206,7 @@ internal static class AttributionEvaluator
             Path = testCase.Path,
             Reason = testCase.Reasoning,
             Verdict = verdict,
+            Raw = raw,
             ExpectedOwner = testCase.Owner,
             ExpectedBound = ClassificationComparison.Describe(minimum, allowed),
             ExpectedRelation = null,

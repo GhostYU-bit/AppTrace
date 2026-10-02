@@ -168,42 +168,60 @@ high-confidence human judgement.
 
 ## Current baseline
 
-Measured after Task 04 (Evidence Model Foundation & Confidence Semantics). Task 04
-changed no owner; it changed what the engine is willing to call confident.
+Measured after Task 05 (Filesystem Semantics & Candidate Generation V2).
 
 ```text
 Corpus
   total cases                           24
-  desired outcome met                    9
+  desired outcome met                   21
   wrong-owner HIGH/CONFIRMED claims      0 of 4 confident claims
-  false positives                        9   (all MEDIUM rather than HIGH)
+  unsupported ownership claims           1   (down from 9)
+  correct UNKNOWN / refusals            11   (up from 3)
 
 Real machine (hand-labelled)
   total cases                           34   (29 reviewed, 5 need review)
+  desired outcome met                   27 of 29
   wrong-owner HIGH/CONFIRMED claims      1 of 15 confident claims
-  correct owner                         21
-  correct UNKNOWN                        6
-  false positives                        2
+  correct owner                         20
+  correct UNKNOWN                        7
+  unsupported ownership claims           1   (the Oxford publisher root)
+  false negatives                        1   (a Steam soundtrack path)
 ```
 
-For comparison, the Task 03 baseline was 11 of 20 confidently wrong in the corpus
-and 2 of 22 on the real machine.
+History, so the trend is visible:
+
+| | Task 03 | Task 04 | Task 05 |
+| --- | --- | --- | --- |
+| Corpus: desired met | 9 | 9 | **21** |
+| Corpus: wrong-owner HIGH/CONFIRMED | 11 of 20 | 0 of 4 | 0 of 4 |
+| Corpus: unsupported claims | 9 | 9 | **1** |
+| Real machine: wrong-owner HIGH/CONFIRMED | 2 of 22 | 1 of 15 | 1 of 15 |
+| Real machine: unsupported claims | 2 | 2 | **1** |
 
 Three things are worth understanding before reading those as a score:
 
-* **The one remaining confidently-wrong real-machine claim** is
+* **Task 04 lowered confidence; Task 05 removed candidates.** That is the intended
+  division of labour. After Task 04 the seven generic-token false positives were
+  still accepted owners, merely at MEDIUM. After Task 05 they are refused outright,
+  which is why "desired outcome met" jumps while "wrong-owner HIGH/CONFIRMED" does
+  not move — the latter was already fixed.
+* **The one remaining unsupported claim** is
   `C:\Program Files (x86)\Oxford University Press`, CONFIRMED because the product
-  registers that publisher-level directory as its install location. That is a
-  *provenance* problem rather than a confidence problem, so it needs the semantic
-  layer or additional provenance sources, not a ladder adjustment.
-* **Confident claims fell sharply (corpus 20 → 4) while unresolved cases stayed at
-  15.** The seven known false positives are still *accepted owners*; they are simply
-  no longer *confident* claims. Task 04 fixed the confidence semantics, not the
-  candidate generation that pairs `sdk` with ASUS Aura SDK in the first place.
-* **16 corpus baselines were deliberately updated from HIGH to MEDIUM.** That is the
-  recorded consequence of the new HIGH semantics, exercised through the mechanism
-  Task 03 built: `EveryCaseReproducesItsRecordedPhase0Behaviour` fails on any
-  unrecorded change, and reports zero drift.
+  registers that publisher-level directory as its install location. It is a
+  *provenance* defect, not a confidence or semantics one, so it needs Task 07's
+  additional sources or a dedicated rule.
+* **One correct owner was traded away.** The Steam soundtrack path under
+  `steamapps\common\Cities_Skylines` was previously attributed by name to
+  `Cities: Skylines`. Its naming directory is four levels below the scan root, so
+  Task 05 no longer treats that name as product identity. This is the deliberate
+  direction of the change: fewer unsupported ownership claims in exchange for some
+  recall.
+
+A measurement defect was also fixed during Task 05. `Met` required `OwnerMet`, so a
+*correct refusal* could never be reported as met; and `WrongOwner` did not require
+that an owner had been named, so a case with no accepted owner was counted as both a
+wrong owner and a false negative. Both are corrected, and the evaluator's
+completeness assertion now balances in both halves of the set.
 
 ---
 

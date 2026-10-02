@@ -18,6 +18,17 @@ public sealed class AttributionInput
     /// <summary>Ancestor directories already accepted by the engine, outermost first.</summary>
     public IReadOnlyList<string> AcceptedAncestorPaths { get; init; } = [];
 
+    /// <summary>
+    /// Normalized path of the scan root this directory sits under.
+    /// </summary>
+    /// <remarks>
+    /// Path semantics needs it to know how deep a segment is below the scope the
+    /// scanner actually judges. That depth is what makes "product level" a
+    /// positional fact: an application's own name appears at the top of its tree,
+    /// not several levels inside another product's structure.
+    /// </remarks>
+    public string? NormalizedScanRoot { get; init; }
+
     /// <summary>Depth beneath the scan root; root children are depth 1.</summary>
     public int Depth { get; init; }
 }
@@ -104,6 +115,15 @@ public sealed class AttributionEngine
     /// </summary>
     private readonly HashSet<string> _vendorNamespaces = new(StringComparer.Ordinal);
 
+    /// <summary>Folded application name → applications with that exact name.</summary>
+    private readonly Dictionary<string, List<AppIdentity>> _appsByFoldedName = new(StringComparer.Ordinal);
+
+    /// <summary>Folded name token → applications whose name contains that token.</summary>
+    private readonly Dictionary<string, List<AppIdentity>> _appsByToken = new(StringComparer.Ordinal);
+
+    /// <summary>Folded publisher → applications from that publisher.</summary>
+    private readonly Dictionary<string, List<AppIdentity>> _appsByPublisherToken = new(StringComparer.Ordinal);
+
     private readonly AttributionOptions _options;
     private readonly Dictionary<string, ExecutableProbe> _executableProbeCache = new(StringComparer.OrdinalIgnoreCase);
     private int _executableProbes;
@@ -127,7 +147,46 @@ public sealed class AttributionEngine
             }
         }
 
+        // Identity indexes, built once per scan so candidate generation is a lookup
+        // rather than a comparison against every installed application.
+        foreach (var app in apps)
+        {
+            var folded = TextNormalizer.Fold(app.NormalizedName);
+            if (folded.Length >= MinimumUsefulTokenLength)
+            {
+                AddToIndex(_appsByFoldedName, folded, app);
+            }
+
+            foreach (var token in NameSegments(app.NormalizedName).Distinct(StringComparer.Ordinal))
+            {
+                if (token.Length >= MinimumUsefulTokenLength)
+                {
+                    AddToIndex(_appsByToken, token, app);
+                }
+            }
+
+            var publisherToken = TextNormalizer.Fold(app.NormalizedPublisher);
+            if (publisherToken.Length >= MinimumUsefulTokenLength)
+            {
+                AddToIndex(_appsByPublisherToken, publisherToken, app);
+            }
+        }
+
         _options = options ?? new AttributionOptions();
+    }
+
+    private static void AddToIndex(
+        Dictionary<string, List<AppIdentity>> index,
+        string key,
+        AppIdentity app)
+    {
+        if (!index.TryGetValue(key, out var list))
+        {
+            list = [];
+            index[key] = list;
+        }
+
+        list.Add(app);
     }
 
     /// <summary>Evaluates one directory.</summary>
@@ -276,19 +335,34 @@ public sealed class AttributionEngine
             && string.Equals(normalizedPath, install, StringComparison.Ordinal);
 
     /// <summary>
-    /// Matches the directory name against application names.
+    /// Generates and validates name-derived identity candidates for one directory.
     /// </summary>
     /// <remarks>
-    /// Matching is deliberately segment-based rather than substring-based.
-    /// Substring containment produces exactly the false positives AppTrace must
-    /// avoid: the vendor directory <c>Google</c> is a substring of the folded
-    /// product name <c>googlechrome</c>, which would otherwise let Google Chrome
-    /// claim the whole vendor namespace. A generic directory name never matches,
-    /// because names like <c>Common</c> appear under half the products on a
-    /// machine.
+    /// <para><b>Candidate generation is an explicit stage.</b> Phase 0 compared the
+    /// directory with every installed application and kept whatever a string
+    /// similarity accepted. This looks the directory name up in a prebuilt index
+    /// instead, so the applications compared against a path are the few whose names
+    /// can actually relate to it — and it emits the reason each candidate was
+    /// generated, so the WHY output can explain candidacy as well as acceptance.</para>
+    /// <para><b>Similarity validates; it does not manufacture.</b> Two independent
+    /// gates must pass before a name may propose an owner:</para>
+    /// <list type="number">
+    /// <item><b>Structure.</b> If the path is inside an established structure — a
+    /// dependency tree, a package-manager cache, a runtime, a logs directory — the
+    /// segment names beneath it are content, and a name coincidence there is a
+    /// structural misreading rather than evidence of an owner.</item>
+    /// <item><b>Specificity.</b> A match must account for enough of the
+    /// application's name to be distinctive, and must not be a <em>near miss</em>
+    /// that requires part of the directory name to be discarded.</item>
+    /// </list>
     /// </remarks>
     private void CollectNameEvidence(AttributionInput input, Dictionary<string, List<Evidence>> evidenceByApp)
     {
+        if (!MaySegmentNameItsOwnProduct(input))
+        {
+            return;
+        }
+
         if (GenericDirectoryNames.IsGeneric(input.DirectoryName))
         {
             return;
@@ -301,12 +375,11 @@ public sealed class AttributionEngine
             return;
         }
 
-        // First pass: which applications could plausibly own this name? A
-        // directory name may only act as a strong identity signal when it picks
-        // out a single application, because "AppX Extended" must not be able to
-        // take the directory that plain "AppX" also matches.
+        // Indexed candidate generation: only applications whose folded name or
+        // tokens actually relate to this segment are even considered.
         var matched = new List<(AppIdentity App, bool Exact)>();
-        foreach (var app in _apps)
+        var sawNearMissOnly = false;
+        foreach (var app in CandidatesFor(directoryToken, directorySegments))
         {
             if (app.NormalizedName.Length < MinimumUsefulTokenLength)
             {
@@ -325,10 +398,23 @@ public sealed class AttributionEngine
                 continue;
             }
 
-            if (IsScopedNameMatch(directorySegments, NameSegments(app.NormalizedName)))
+            if (!IsScopedNameMatch(directorySegments, NameSegments(app.NormalizedName)))
             {
-                matched.Add((app, false));
+                continue;
             }
+
+            if (IsNearMiss(input.DirectoryName, app))
+            {
+                // "Cities Skylines II" is not "Cities: Skylines". When the best
+                // available explanation requires discarding part of the directory
+                // name, the honest answer is UNKNOWN rather than the nearest
+                // installed application — especially when the correct product is
+                // simply not installed.
+                sawNearMissOnly = true;
+                continue;
+            }
+
+            matched.Add((app, false));
         }
 
         if (matched.Count != 1)
@@ -336,11 +422,20 @@ public sealed class AttributionEngine
             // Zero matches: nothing to say. Several matches: the name alone cannot
             // decide, so the path stays a candidate set rather than gaining a
             // strong identity signal.
+            _ = sawNearMissOnly;
             return;
         }
 
         var (owner, exact) = matched[0];
         var appSegments = NameSegments(owner.NormalizedName);
+        if (!IsNameSpecificEnough(directorySegments, appSegments))
+        {
+            // The name accounts for too little of the product to identify it. A
+            // segment like "sdk" or "tool" that is one word of a five-word product
+            // name is ambiguous vocabulary: it may mean that product, or a hundred
+            // other things.
+            return;
+        }
 
         Add(
             evidenceByApp,
@@ -353,6 +448,139 @@ public sealed class AttributionEngine
                 : $"Directory name \"{input.DirectoryName}\" contains the application name \"{owner.DisplayName}\" as a whole word.",
             true,
             CoverageOf(input.DirectoryName, appSegments));
+    }
+
+    /// <summary>
+    /// True when the directory's own name is allowed to identify a product.
+    /// </summary>
+    /// <remarks>
+    /// A registered path is always allowed: structure may observe that a directory
+    /// "looks like a cache", but it must never override the application's own
+    /// registration. That is what keeps a real product legitimately named
+    /// <c>Cache</c>, or a directory a product explicitly registered, from being
+    /// suppressed by vocabulary alone.
+    /// </remarks>
+    private static bool MaySegmentNameItsOwnProduct(AttributionInput input)
+    {
+        // The depth the scanner reports is the authority on position; the scan root
+        // only sharpens it when the path really is inside that root.
+        var semantics = PathSemantics.Analyse(input.NormalizedPath, input.NormalizedScanRoot, input.Depth);
+        return !PathSemantics.SuppressesIdentityForLeaf(semantics);
+    }
+
+    /// <summary>
+    /// The applications whose names can plausibly relate to a directory segment,
+    /// found through the identity indexes rather than by scanning every installed
+    /// application.
+    /// </summary>
+    /// <remarks>
+    /// This is the "candidate generation" stage. It is deliberately high-recall and
+    /// cheap: it narrows the comparison set, and validation decides what survives.
+    /// </remarks>
+    private IEnumerable<AppIdentity> CandidatesFor(string directoryToken, IReadOnlyList<string> directorySegments)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        if (_appsByFoldedName.TryGetValue(directoryToken, out var exactName))
+        {
+            foreach (var app in exactName)
+            {
+                if (seen.Add(app.Id))
+                {
+                    yield return app;
+                }
+            }
+        }
+
+        // Token index: an application whose name contains this segment as a word.
+        foreach (var segment in directorySegments)
+        {
+            if (!_appsByToken.TryGetValue(segment, out var byToken))
+            {
+                continue;
+            }
+
+            foreach (var app in byToken)
+            {
+                if (seen.Add(app.Id))
+                {
+                    yield return app;
+                }
+            }
+        }
+
+        // Publisher namespace: a directory named after a publisher is a real
+        // relationship and is how vendor roots are resolved at all.
+        if (_appsByPublisherToken.TryGetValue(directoryToken, out var byPublisher))
+        {
+            foreach (var app in byPublisher)
+            {
+                if (seen.Add(app.Id))
+                {
+                    yield return app;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// True when the directory name is a near miss rather than a name for this
+    /// application.
+    /// </summary>
+    /// <remarks>
+    /// <para>A near miss is a superset: the directory says more than the product's
+    /// name does, and the extra says something other than the publisher. The
+    /// distinction matters in both directions:</para>
+    /// <list type="bullet">
+    /// <item><c>Cities Skylines II</c> against <c>Cities: Skylines</c> — the extra
+    /// <c>ii</c> is a different product, so this is a near miss.</item>
+    /// <item><c>Microsoft Edge</c> against <c>Edge</c> — the extra <c>microsoft</c>
+    /// is the publisher, which is legitimate and must keep matching, because that
+    /// is exactly how per-user data directories are named.</item>
+    /// </list>
+    /// </remarks>
+    private static bool IsNearMiss(string directoryName, AppIdentity app)
+    {
+        var directory = TextNormalizer.Fold(directoryName);
+        var product = TextNormalizer.Fold(app.NormalizedName);
+        if (directory.Length <= product.Length || !directory.Contains(product, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var publisher = TextNormalizer.Fold(app.NormalizedPublisher);
+        var remainder = directory.Replace(product, string.Empty, StringComparison.Ordinal);
+        if (remainder.Length == 0)
+        {
+            return false;
+        }
+
+        // A publisher prefix or suffix such as "microsoft" or "adobe" explains the
+        // extra words and is not a near miss.
+        return publisher.Length == 0 || !publisher.Contains(remainder, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// True when the match accounts for enough of the application's name to identify
+    /// it rather than merely overlap with it.
+    /// </summary>
+    /// <remarks>
+    /// The floor is the same measured discriminator used for corroboration, for the
+    /// same reason and with the same caveat: it describes the cases we have, and it
+    /// is only ever used to withhold a claim, never to grant one.
+    /// </remarks>
+    private static bool IsNameSpecificEnough(
+        List<string> directorySegments,
+        List<string> appSegments)
+    {
+        if (appSegments.Count <= directorySegments.Count)
+        {
+            // The directory names all of the product's words or a contiguous run of
+            // them, so there is nothing ambiguous left over.
+            return true;
+        }
+
+        return CoverageOf(string.Join(' ', directorySegments), appSegments) >= MinimumCorroboratingSpecificity;
     }
 
     /// <summary>

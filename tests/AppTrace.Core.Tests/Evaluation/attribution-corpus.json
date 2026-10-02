@@ -168,12 +168,9 @@
         "minClassification": "Unknown"
       },
       "current": {
-        "owner": "Node.js Krypton via nvm-windows",
-        "classification": "Medium",
-        "supportingEvidence": [
-          "KnownApplicationPath",
-          "NormalizedNameMatch"
-        ]
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
       }
     },
     {
@@ -190,12 +187,9 @@
         "minClassification": "Unknown"
       },
       "current": {
-        "owner": "Node.js Krypton via nvm-windows",
-        "classification": "Medium",
-        "supportingEvidence": [
-          "KnownApplicationPath",
-          "NormalizedNameMatch"
-        ]
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
       }
     },
     {
@@ -212,12 +206,9 @@
         "minClassification": "Unknown"
       },
       "current": {
-        "owner": "ASUS Aura SDK",
-        "classification": "Medium",
-        "supportingEvidence": [
-          "KnownApplicationPath",
-          "NormalizedNameMatch"
-        ]
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
       }
     },
     {
@@ -234,12 +225,9 @@
         "minClassification": "Unknown"
       },
       "current": {
-        "owner": "Epson Printer Driver Security Support Tool",
-        "classification": "Medium",
-        "supportingEvidence": [
-          "KnownApplicationPath",
-          "NormalizedNameMatch"
-        ]
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
       }
     },
     {
@@ -256,12 +244,9 @@
         "minClassification": "Unknown"
       },
       "current": {
-        "owner": "Universal Holtek RGB DRAM",
-        "classification": "Medium",
-        "supportingEvidence": [
-          "KnownApplicationPath",
-          "NormalizedNameMatch"
-        ]
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
       }
     },
     {
@@ -279,12 +264,9 @@
         "minClassification": "Unknown"
       },
       "current": {
-        "owner": "360 Zip",
-        "classification": "Medium",
-        "supportingEvidence": [
-          "KnownApplicationPath",
-          "NormalizedNameMatch"
-        ]
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
       }
     },
     {
@@ -302,12 +284,9 @@
         "minClassification": "Unknown"
       },
       "current": {
-        "owner": "ASUS Update Helper",
-        "classification": "Medium",
-        "supportingEvidence": [
-          "KnownApplicationPath",
-          "NormalizedNameMatch"
-        ]
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
       }
     },
     {
@@ -330,12 +309,9 @@
         "relationNote": "Cities: Skylines RELATED_TO. The relationship model does not exist yet (Task 06), so this expectation can only be reported as unresolved."
       },
       "current": {
-        "owner": "Cities: Skylines",
-        "classification": "Medium",
-        "supportingEvidence": [
-          "ExactDirectoryNameMatch",
-          "KnownApplicationPath"
-        ]
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
       }
     },
     {
@@ -357,12 +333,9 @@
         "relation": "RelatedTo"
       },
       "current": {
-        "owner": "Adobe Illustrator 2023",
-        "classification": "Medium",
-        "supportingEvidence": [
-          "ExactDirectoryNameMatch",
-          "KnownApplicationPath"
-        ]
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
       }
     },
     {
@@ -379,12 +352,9 @@
         "minClassification": "Unknown"
       },
       "current": {
-        "owner": "Cities: Skylines",
-        "classification": "Medium",
-        "supportingEvidence": [
-          "KnownApplicationPath",
-          "NormalizedNameMatch"
-        ]
+        "owner": null,
+        "classification": "Unknown",
+        "supportingEvidence": []
       }
     },
     {
@@ -569,8 +539,7 @@
         "classification": "Confirmed",
         "supportingEvidence": [
           "DeclaredInstallLocation",
-          "KnownPublisherNamespace",
-          "NormalizedNameMatch"
+          "KnownPublisherNamespace"
         ]
       }
     },
@@ -696,9 +665,11 @@
         "minClassification": "Medium"
       },
       "current": {
-        "owner": null,
-        "classification": "Unknown",
-        "supportingEvidence": []
+        "owner": "Cache",
+        "classification": "Medium",
+        "supportingEvidence": [
+          "ExactDirectoryNameMatch"
+        ]
       }
     }
   ]

@@ -55,9 +55,51 @@ internal static class Fixtures
             DirectoryName = Path.GetFileName(normalized.TrimEnd(Path.DirectorySeparatorChar)),
             Category = category,
             AcceptedAncestorPaths = acceptedAncestors ?? [],
-            Depth = 1,
+            NormalizedScanRoot = ScanRootFor(normalized, category),
+            Depth = DepthBelowRoot(normalized, category),
         });
     }
+
+    /// <summary>
+    /// The deepest well-known root this test path sits under, mirroring how the
+    /// scanner anchors a walk.
+    /// </summary>
+    /// <remarks>
+    /// Path semantics needs the same anchor the scanner uses, otherwise a synthetic
+    /// path would appear far deeper than it is and product-level directories would
+    /// be treated as components. Keeping the fixture honest here is what lets the
+    /// semantic rules be tested without weakening them.
+    /// </remarks>
+    private static string ScanRootFor(string normalizedPath, LocationCategory category)
+    {
+        var candidate = RootsFor(category)
+            .Where(root => root.Length > 0
+                && (normalizedPath.Equals(root, StringComparison.Ordinal)
+                    || normalizedPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+            .OrderByDescending(root => root.Length)
+            .FirstOrDefault();
+
+        return candidate ?? string.Empty;
+    }
+
+    private static int DepthBelowRoot(string normalizedPath, LocationCategory category)
+    {
+        var root = ScanRootFor(normalizedPath, category);
+        return Math.Max(Segments(normalizedPath) - Segments(root), 0);
+    }
+
+    private static int Segments(string path)
+        => path.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries).Length;
+
+    private static IEnumerable<string> RootsFor(LocationCategory category) => category switch
+    {
+        LocationCategory.ProgramFiles => [@"c:\program files", @"c:\program files (x86)"],
+        LocationCategory.ProgramData => [@"c:\programdata"],
+        LocationCategory.RoamingAppData => [@"c:\users\user\appdata\roaming"],
+        LocationCategory.LocalAppData => [@"c:\users\user\appdata\local"],
+        LocationCategory.LocalLowAppData => [@"c:\users\user\appdata\locallow"],
+        _ => [],
+    };
 
     public static CandidateOwner? Candidate(LocationAttribution attribution, string displayName)
         => attribution.Candidates.FirstOrDefault(c => c.AppId == "app-" + TextNormalizer.Fold(displayName));

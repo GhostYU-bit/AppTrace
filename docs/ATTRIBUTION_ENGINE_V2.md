@@ -700,6 +700,10 @@ Task 01 development.
 
 ## E. Filesystem Semantic Layer
 
+> **Implemented in Task 05.** The `StructureKind` enum, `PathSemantics` and the
+> candidate-generation stage now exist in production code. See "Task 05 as built"
+> at the end of this document for exactly which rules shipped and which did not.
+
 ### E.1 Purpose and the boundary
 
 The layer answers exactly one question:
@@ -708,6 +712,8 @@ The layer answers exactly one question:
 
 It explains **why a name must not be read as a brand**, and it can therefore only
 *reduce* confidence or *change the relation*. It never creates an owner.
+
+**Structural semantics describe what a path means; they do not create an owner.**
 
 **The boundary, stated as rules:**
 
@@ -724,6 +730,46 @@ It explains **why a name must not be read as a brand**, and it can therefore onl
 A rule earns its place only if it is **product-independent**: it holds for every
 application of that shape, on any machine. Anything that names a specific product
 belongs in identity discovery, not here.
+
+### E.1a The line the semantic layer must not cross
+
+Two kinds of rule look similar and are not:
+
+| | Good semantic rule | Bad semantic rule |
+| --- | --- | --- |
+| Example | `node_modules` → dependency tree | `sdk` → generic |
+| Why | A reusable, product-independent statement about how software is laid out | A word that is sometimes a product name |
+| Test | Holds for every product of that shape, on any machine | Only holds for the false positives we happen to have seen |
+
+`sdk`, `helper`, `node`, `tool`, `universal`, `zip`, `client`, `service` and
+`manager` are **ambiguous vocabulary, not structural vocabulary**. Their meaning
+depends on the path context and on independent identity evidence. They are
+therefore absent from both the structure table and the generic-name list, and are
+handled by match specificity instead. A rule table containing them would memorise
+today's false positives rather than prevent tomorrow's — and `PathSemanticsTests`
+asserts their absence so that adding one is a visible, reviewable decision rather
+than a quiet fix.
+
+### E.1b Structural vocabulary is positional
+
+The same word means different things at different depths, and the semantic layer
+must model that rather than banning the word:
+
+```text
+C:\Program Files\Cache                         Cache is the product        → identity
+C:\Vendor\Product\Cache\data                   Cache is structure          → no identity
+```
+
+The rule that produces this: **an anchor governs what is inside it.** A structural
+segment suppresses identity for everything *beneath* it, and for itself only when
+it is itself nested more than one level below the scan root. A product-level
+directory keeps the right to be named.
+
+This is why `Cache`, `Packages`, `logs`, `temp`, `runtime` and `update` were
+*removed* from `GenericDirectoryNames` in Task 05 rather than added to the
+semantic table alone. Keeping them in an unconditional list made the decision
+unrepresentable: a real product named `Cache` could never be identified at any
+depth, which is a false negative baked into a constant.
 
 ### E.2 Minimal rule set
 
@@ -1502,3 +1548,108 @@ therefore: **high precision on a minority of well-registered locations, honest
 UNKNOWN on the rest**, with the reasoning always shown. Phase 0's error was not
 that it reached for the second claim; it was that it reached for it on the
 strength of a folder being called `sdk`.
+
+---
+
+## Task 05 as built — Filesystem Semantics & Candidate Generation V2
+
+Task 05 replaced Phase 0's behaviour:
+
+```text
+directory × every installed app → string similarity → candidate
+```
+
+with an explicit pipeline:
+
+```text
+Installed Application Discovery
+        ↓
+Identity Index                     (built once per scan)
+        ↓
+Filesystem Scan
+        ↓
+Path Semantic Analysis             (PathSemantics)
+        ↓
+Candidate Generation               (index lookup, not exhaustive comparison)
+        ↓
+Candidate Validation               (structure, specificity, near-miss)
+        ↓
+Evidence Gates                     (Task 04 kinds + contradiction gate)
+        ↓
+Classification                     (Task 04 ladder)
+        ↓
+WHY
+```
+
+### The two rules this implements
+
+> **Similarity validates candidates; it does not universally create them.**
+
+> **Structural semantics describe what a path means; they do not create an owner.**
+
+### Structure kinds
+
+`StructureKind` is deliberately small: 10 kinds, each a reusable storage concept,
+not a filesystem ontology.
+
+| Kind | Examples |
+| --- | --- |
+| `PackageDependencyTree` | `node_modules`, `site-packages`, `bower_components` |
+| `PackageManagerCache` | `npm-cache`, `_npx`, `_cacache`, `nuget`, `pip` |
+| `ApplicationRuntime` | `sandbox_runtime`, `runtime`, `jre`, `cef`, `webview2` |
+| `ComponentFramework` | `QtQuick`, `qt`, `electron`, `chromium` |
+| `ApplicationProfile` | `User Data` |
+| `ApplicationCache` | `Cache`, `GPUCache`, `DXCache`, `shadercache` |
+| `Logs` | `logs`, `log` |
+| `Temporary` | `temp`, `tmp`, `promo` |
+| `ApplicationUpdateTree` | `update`, `packages`, `SquirrelTemp` |
+| `Unknown` | everything else — including `sdk`, `helper`, `node`, `tool`, `universal` |
+
+### The four validation rules
+
+1. **Structure suppresses identity.** Once an anchor appears in the ancestry, the
+   segments beneath it are content. `node_modules\...\sdk` cannot propose ASUS Aura
+   SDK however good the name looks.
+2. **Structure is positional.** An anchor governs what is inside it, and suppresses
+   its own name only when it is itself nested more than one level below the scan
+   root. So `Program Files\Cache` may be the product `Cache`, while
+   `Vendor\Product\Cache\data` may not.
+3. **Specificity gates candidacy, not just confidence.** A name must account for at
+   least half the product's tokens to propose it, unless the directory already
+   names every word. The measured coverage figures are in §C.
+4. **Near misses are rejected.** A directory that says *more* than the product's
+   name does, where the extra is not the publisher, is a different thing:
+   `Cities Skylines II` is not `Cities: Skylines`. A missing candidate means
+   UNKNOWN, not the nearest installed application.
+
+### Provenance still wins
+
+Suppression only ever withholds **name** evidence. An application's own
+registration of a directory is independent evidence and is never suppressed, so a
+legitimately registered directory whose name happens to be structural vocabulary
+keeps its claim.
+
+### What is deliberately not here
+
+No `Owns`/`RelatedTo` model (Task 06), no new provenance sources — App Paths,
+services, tasks, Run keys, shortcuts, signers, Steam/Epic manifests, MSIX — (Task
+07), no runtime monitoring, no rules engine, no database, and **no generic-token
+blacklist**. `sdk`, `helper`, `node`, `tool`, `universal` and `zip` appear in no
+list in the engine; they are rejected by specificity and structure.
+
+### Measured effect
+
+| Metric | Before Task 05 | After |
+| --- | --- | --- |
+| Corpus: desired V2 outcomes met | 9 of 24 | **21 of 24** |
+| Corpus: unsupported ownership claims | 9 false positives | **1** |
+| Corpus: wrong-owner HIGH/CONFIRMED | 0 of 4 | 0 of 4 |
+| Real machine: unsupported claims | 2 false positives | **1** (Oxford) |
+| Real machine: correct owners lost | — | **none** |
+
+The seven original generic-token false positives (`node`, `sdk`, `tool`, `helper`,
+`Universal`, `adm-zip`, `cities_skylines`) are now refused outright rather than
+downgraded, on the corpus and on the real machine. One trade-off was accepted: the
+Steam soundtrack path, previously attributed to `Cities: Skylines` by name, is now
+UNKNOWN, because its naming directory is four levels below the scan root. A single
+recall loss to remove a class of unsupported claims is the trade this task chose.

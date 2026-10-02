@@ -42,6 +42,10 @@ scan*.json
 evidence-probe.md
 samples/
 
+# Development handover notes. Local working document for whoever picks the project
+# up next; deliberately not published.
+docs/HANDOVER.md
+
 # Logs and crash artifacts
 *.log
 *.dmp

@@ -1,4 +1,5 @@
 using AppTrace.Core.Attribution;
+using AppTrace.Core.Discovery;
 using AppTrace.Core.Model;
 
 namespace AppTrace.Core.Tests;
@@ -253,6 +254,118 @@ public class AttributionRulesTests
     }
 
     [Fact]
+    public void UnequalProvenance_DoesNotLetOneProductConsumeACoDeclaredRoot()
+    {
+        // Both products declare the same vendor root, and one of them has several
+        // registration records beneath it. Accumulated provenance must not let it
+        // drift outside the tie window and be published as the sole owner of a root
+        // that is shared by construction.
+        var busy = Fixtures.App("Widget One", "Widgetco", @"C:\Program Files\Widgetco");
+        var quiet = Fixtures.App("Widget Two", "Widgetco", @"C:\Program Files\Widgetco");
+
+        var provenance = new ProvenanceIndex(
+        [
+            Anchor(busy.Id, @"C:\Program Files\Widgetco\Widget One\WidgetOne.exe"),
+            Anchor(busy.Id, @"C:\Program Files\Widgetco\Widget One\WidgetOneService.exe"),
+            Anchor(busy.Id, @"C:\Program Files\Widgetco\Widget One\WidgetOneHelper.exe"),
+        ]);
+
+        var attribution = Fixtures.Evaluate(
+            @"C:\Program Files\Widgetco",
+            [busy, quiet],
+            provenance: provenance);
+
+        // Neither product may win the root: the per-product boundary is below it.
+        Assert.False(attribution.OwnershipEstablished);
+        Assert.Equal(2, attribution.AcceptedOwners.Count);
+        Assert.Equal(
+            [busy.Id, quiet.Id],
+            attribution.AcceptedOwners.Select(o => o.AppId).OrderBy(id => id, StringComparer.Ordinal).ToArray());
+
+        // And the product with the most records must not be published as a
+        // confident owner of the shared root.
+        var busyOwner = Fixtures.Candidate(attribution, "Widget One");
+        Assert.NotNull(busyOwner);
+        Assert.True(busyOwner.Accepted);
+        Assert.Equal(Classification.Medium, busyOwner.Classification);
+    }
+
+    [Fact]
+    public void CoDeclaredInstallRootWithoutAVendorName_IsStillShared()
+    {
+        // The root is not named after any publisher, so the vendor-namespace rule
+        // cannot see it. What makes it shared is the registry: two distinct products
+        // declare it as their exact install location, so it is a container boundary
+        // regardless of what it is called.
+        var one = Fixtures.App("Widget One", "Widgetco", @"C:\Program Files\Vault");
+        var two = Fixtures.App("Gadget Two", "Gadgetry", @"C:\Program Files\Vault");
+
+        var provenance = new ProvenanceIndex(
+        [
+            Anchor(one.Id, @"C:\Program Files\Vault\Widget One\WidgetOne.exe"),
+        ]);
+
+        var attribution = Fixtures.Evaluate(
+            @"C:\Program Files\Vault",
+            [one, two],
+            provenance: provenance);
+
+        Assert.False(attribution.OwnershipEstablished);
+        Assert.Equal(2, attribution.AcceptedOwners.Count);
+
+        // The location is AMBIGUOUS, so no product is published as its confident
+        // owner even though each one's own registration names it.
+        Assert.Equal(Classification.Ambiguous, attribution.Classification);
+        Assert.False(attribution.Classification.IsConfident());
+    }
+
+    [Fact]
+    public void DecisivelyContradictedCandidate_IsNeverPublishedAsAnAcceptedOwner()
+    {
+        // "Adobe" is a vendor namespace because two Adobe products are installed,
+        // and a third-party application has a genuine Windows registration pointing
+        // into it. The registration is real provenance, but the publisher
+        // contradiction is decisive: no amount of weak support may outvote it, so
+        // the candidate must not be published as an accepted owner while its own
+        // classification is UNKNOWN. Accepting it was what let a location be
+        // reported as unattributed in one view and as owned in another.
+        var photoshop = Fixtures.App("Adobe Photoshop", "Adobe Inc.");
+        var premiere = Fixtures.App("Adobe Premiere Pro", "Adobe Inc.");
+        var zoom = Fixtures.App("Zoom", "Zoom Video Communications");
+
+        var provenance = new ProvenanceIndex(
+        [
+            new ProvenanceAnchor(
+                zoom.Id,
+                @"C:\Users\User\AppData\Local\Adobe\Zoom.exe",
+                @"c:\users\user\appdata\local\adobe",
+                ProvenanceSource.AppPath,
+                ExecutableRole.MainApplication,
+                @"HKLM\Software\Microsoft\Windows\CurrentVersion\App Paths\Zoom.exe",
+                "App Paths registers the executable for this user.")
+            {
+                IsIndependentlyLinked = true,
+            },
+        ]);
+
+        var attribution = Fixtures.Evaluate(
+            @"C:\Users\User\AppData\Local\Adobe",
+            [photoshop, premiere, zoom],
+            LocationCategory.LocalAppData,
+            provenance: provenance);
+
+        var candidate = Fixtures.Candidate(attribution, "Zoom");
+        Assert.NotNull(candidate);
+        Assert.Contains(candidate.Evidence, e => e.Type == EvidenceType.PublisherMismatch);
+        Assert.False(candidate.Accepted);
+        Assert.Equal(Classification.Unknown, candidate.Classification);
+
+        Assert.Equal(Classification.Unknown, attribution.Classification);
+        Assert.Empty(attribution.AcceptedOwners);
+        Assert.False(attribution.OwnershipEstablished);
+    }
+
+    [Fact]
     public void OneAppNamedAfterDirectoryIsPreferredOverOtherVendorProducts()
     {
         var target = Fixtures.App("Contoso Reporter", "Contoso", @"C:\Program Files\Contoso\Reporter");
@@ -263,6 +376,70 @@ public class AttributionRulesTests
         Assert.True(attribution.OwnershipEstablished);
         Assert.Single(attribution.AcceptedOwners);
         Assert.Equal("app-contosoreporter", attribution.AcceptedOwners[0].AppId);
+    }
+
+    // ---- Correlated provenance -------------------------------------------
+
+    [Fact]
+    public void RepeatedRegistrationsToTheSameExecutable_ContributeOneBoundedRecord()
+    {
+        // An App Paths entry and three shortcuts all name the same file. That is one
+        // fact observed four times, not four independent reasons to trust it, so it
+        // must not become four times the confidence.
+        var app = Fixtures.App("Widget One", "Widgetco");
+
+        var provenance = new ProvenanceIndex(
+        [
+            Anchor(app.Id, @"C:\Program Files\Widgetco\Widget One\WidgetOne.exe"),
+            Anchor(app.Id, @"C:\Program Files\Widgetco\Widget One\WidgetOne.exe", ProvenanceSource.Shortcut),
+            Anchor(app.Id, @"C:\Program Files\Widgetco\Widget One\WidgetOne.exe", ProvenanceSource.Shortcut),
+            Anchor(app.Id, @"C:\Program Files\Widgetco\Widget One\WidgetOne.exe", ProvenanceSource.Shortcut),
+        ]);
+
+        var attribution = Fixtures.Evaluate(
+            @"C:\Program Files\Widgetco\Widget One",
+            [app],
+            provenance: provenance);
+
+        var owner = Fixtures.Candidate(attribution, "Widget One");
+        Assert.NotNull(owner);
+
+        var anchors = owner.Evidence
+            .Where(e => e.Type == EvidenceType.ProvenanceAnchorMatch)
+            .ToArray();
+        var record = Assert.Single(anchors);
+
+        // ...but WHY still names every observed surface.
+        Assert.Contains("App Paths", record.Description);
+        Assert.Contains("shortcut", record.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("x3", record.Description);
+    }
+
+    [Fact]
+    public void DistinctExecutablesOfOneProduct_RemainSeparateProvenanceFacts()
+    {
+        // A main executable and a service binary are two different physical targets,
+        // so bounding correlated provenance must not collapse them into one.
+        var app = Fixtures.App("Widget One", "Widgetco");
+
+        var provenance = new ProvenanceIndex(
+        [
+            Anchor(app.Id, @"C:\Program Files\Widgetco\Widget One\WidgetOne.exe"),
+            Anchor(
+                app.Id,
+                @"C:\Program Files\Widgetco\Widget One\WidgetOneService.exe",
+                ProvenanceSource.Service,
+                ExecutableRole.Service),
+        ]);
+
+        var attribution = Fixtures.Evaluate(
+            @"C:\Program Files\Widgetco\Widget One",
+            [app],
+            provenance: provenance);
+
+        var owner = Fixtures.Candidate(attribution, "Widget One");
+        Assert.NotNull(owner);
+        Assert.Equal(2, owner.Evidence.Count(e => e.Type == EvidenceType.ProvenanceAnchorMatch));
     }
 
     // ---- Missing registry data -------------------------------------------
@@ -305,4 +482,146 @@ public class AttributionRulesTests
             attribution.Candidates.SelectMany(c => c.Evidence),
             e => e.Type is EvidenceType.ExactDirectoryNameMatch or EvidenceType.NormalizedNameMatch);
     }
+
+    // ---- Data-root product boundaries (Task 07.6) -------------------------
+
+    [Theory]
+    [InlineData(LocationCategory.ProgramData, @"C:\ProgramData\Contoso Reporter")]
+    [InlineData(LocationCategory.RoamingAppData, @"C:\Users\User\AppData\Roaming\Contoso Reporter")]
+    [InlineData(LocationCategory.LocalLowAppData, @"C:\Users\User\AppData\LocalLow\Contoso Reporter")]
+    [InlineData(LocationCategory.LocalAppData, @"C:\Users\User\AppData\Local\Contoso Reporter")]
+    public void ProductBoundaryDirectlyUnderADataRoot_ProposesTheInstalledIdentity(
+        LocationCategory category,
+        string path)
+    {
+        // The first meaningful directory below a data root is where a product's own
+        // data namespace may begin, so a sufficiently specific installed identity may
+        // be proposed there.
+        var app = Fixtures.App("Contoso Reporter", "Contoso");
+
+        var attribution = Fixtures.Evaluate(path, [app], category);
+
+        var owner = Fixtures.Candidate(attribution, "Contoso Reporter");
+        Assert.NotNull(owner);
+        Assert.True(owner.Accepted);
+        Assert.Contains(owner.Evidence, e => e.Type == EvidenceType.ExactDirectoryNameMatch);
+
+        // The boundary record documents where the proposal is allowed to come from...
+        var boundary = Assert.Single(
+            owner.Evidence,
+            e => e.Type == EvidenceType.DataRootProductBoundary);
+        Assert.Equal(EvidenceKind.Structure, boundary.Kind);
+        Assert.Equal(0, boundary.Weight);
+
+        // ...and being structure worth nothing, it cannot raise the claim by itself.
+        Assert.True(owner.Score < 45 || owner.Evidence.Any(e => e.Kind == EvidenceKind.Identity));
+    }
+
+    [Fact]
+    public void VendorThenProductBoundary_ProposesTheProductAndNotTheVendorDirectory()
+    {
+        var app = Fixtures.App("DaVinci Resolve", "Blackmagic Design");
+
+        var product = Fixtures.Evaluate(
+            @"C:\Users\User\AppData\Local\Blackmagic Design\DaVinci Resolve",
+            [app],
+            LocationCategory.LocalAppData);
+
+        var owner = Fixtures.Candidate(product, "DaVinci Resolve");
+        Assert.NotNull(owner);
+        Assert.True(owner.Accepted);
+        Assert.Contains(owner.Evidence, e => e.Type == EvidenceType.DataRootProductBoundary);
+
+        // The product boundary proposes the candidate and lets the existing ladder
+        // decide: a name alone stays MEDIUM, exactly as it does anywhere else.
+        Assert.Equal(Classification.Medium, product.Classification);
+
+        // The vendor segment above it scopes the search; it must not be handed to the
+        // product merely because the product lives below it.
+        var vendor = Fixtures.Evaluate(
+            @"C:\Users\User\AppData\Local\Blackmagic Design",
+            [app],
+            LocationCategory.LocalAppData);
+
+        Assert.Empty(vendor.Candidates);
+        Assert.False(vendor.OwnershipEstablished);
+        Assert.False(vendor.Classification.IsConfident());
+    }
+
+    [Fact]
+    public void VendorDirectoryUnderADataRoot_IsNotExclusivelyOwnedByASingleProduct()
+    {
+        // Two products share the same publisher namespace. Neither of them may take
+        // the vendor directory itself, however specific their own names are: the
+        // per-product boundary lives below it.
+        var one = Fixtures.App("Widgetco One", "Widgetco");
+        var two = Fixtures.App("Widgetco Two", "Widgetco");
+
+        var attribution = Fixtures.Evaluate(
+            @"C:\ProgramData\Widgetco",
+            [one, two],
+            LocationCategory.ProgramData);
+
+        Assert.False(attribution.OwnershipEstablished);
+        Assert.Empty(attribution.AcceptedOwners);
+        Assert.Equal(Classification.Unknown, attribution.Classification);
+    }
+
+    [Fact]
+    public void ProductLikeNameDeeperThanAProductBoundary_IsNotProposed()
+    {
+        // The boundary is positional. Two levels below a data root is the product
+        // boundary; three levels is the product's own content, and a product name
+        // there is a coincidence rather than a namespace of its own.
+        var app = Fixtures.App("Contoso Reporter", "Contoso");
+
+        var attribution = Fixtures.Evaluate(
+            @"C:\Users\User\AppData\Local\Contoso Suite\Shared\Contoso Reporter",
+            [app],
+            LocationCategory.LocalAppData);
+
+        Assert.DoesNotContain(
+            attribution.Candidates.SelectMany(c => c.Evidence),
+            e => e.Type == EvidenceType.DataRootProductBoundary);
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\User\AppData\Local\Contoso\node_modules\Contoso Reporter")]
+    [InlineData(@"C:\Users\User\AppData\Local\npm-cache\Contoso Reporter")]
+    [InlineData(@"C:\Users\User\AppData\Local\Contoso\logs\Contoso Reporter")]
+    [InlineData(@"C:\Users\User\AppData\Local\Contoso\runtime\Contoso Reporter")]
+    [InlineData(@"C:\Users\User\AppData\Local\Contoso\QtQuick\Contoso Reporter")]
+    public void ProductLikeNameBeneathAStructuralAnchor_GainsNothingFromTheDataRoot(string path)
+    {
+        // Task 05's structural protections stay authoritative inside application data.
+        // Sitting under AppData or ProgramData must not supply the product-boundary
+        // privilege that a genuine product boundary has.
+        var app = Fixtures.App("Contoso Reporter", "Contoso");
+
+        var attribution = Fixtures.Evaluate(path, [app], LocationCategory.LocalAppData);
+
+        Assert.DoesNotContain(
+            attribution.Candidates.SelectMany(c => c.Evidence),
+            e => e.Type is EvidenceType.ExactDirectoryNameMatch
+                or EvidenceType.NormalizedNameMatch
+                or EvidenceType.DataRootProductBoundary);
+    }
+
+    /// <summary>An independently linked registration of one executable path.</summary>
+    private static ProvenanceAnchor Anchor(
+        string appId,
+        string path,
+        ProvenanceSource source = ProvenanceSource.AppPath,
+        ExecutableRole role = ExecutableRole.MainApplication)
+        => new(
+            appId,
+            path,
+            TextNormalizer.NormalizePath(Path.GetDirectoryName(path)!),
+            source,
+            role,
+            @"HKLM\Software\Microsoft\Windows\CurrentVersion\App Paths",
+            "App Paths registers this executable.")
+        {
+            IsIndependentlyLinked = true,
+        };
 }

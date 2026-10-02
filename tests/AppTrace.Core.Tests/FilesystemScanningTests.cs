@@ -1,5 +1,7 @@
 using AppTrace.Core.Attribution;
+using AppTrace.Core.Discovery;
 using AppTrace.Core.Model;
+using AppTrace.Core.Reporting;
 using AppTrace.Core.Scanning;
 
 namespace AppTrace.Core.Tests;
@@ -123,6 +125,138 @@ public class FilesystemScanningTests
     }
 
     [Fact]
+    public void PublishedAccountingBuckets_AreAPartitionOfTheMeasuredBytes()
+    {
+        using var tree = new TempTree();
+        tree.File(@"Solo App\solo.exe", 1500);
+        tree.File(@"Solo App\data\cache.bin", 2500);
+        tree.File(@"Possible App\possible.bin", 900);
+        tree.File(@"Mystery\mystery.bin", 512);
+
+        var apps = new List<AppIdentity>
+        {
+            // Declared directly inside the fixture so the location is CONFIRMED; the
+            // MEDIUM and UNKNOWN cases come from the other two directories.
+            Fixtures.App("Solo App", "Solo Software", Path.Combine(tree.Root, "Solo App")),
+            Fixtures.App("Possible App", "Possible Software"),
+        };
+
+        var scan = RunScan(tree, apps);
+        var report = FootprintReport.Build(scan);
+
+        // The four published buckets partition the scan by Classification, so they
+        // must sum to the measured total exactly. The unattributed bucket used to be
+        // partitioned by accepted-owner count instead, which left a location that
+        // stayed UNKNOWN while carrying an accepted candidate in no bucket at all -
+        // the source of the reported field total falling short of the measured bytes
+        // while the per-classification sums reconciled.
+        Assert.Equal(scan.TotalMeasuredBytes, scan.Items.Sum(i => i.SizeBytes));
+        Assert.Equal(scan.TotalMeasuredBytes, report.Totals.TotalMeasuredBytes);
+        Assert.Equal(
+            scan.TotalMeasuredBytes,
+            report.Totals.ConfidentBytes
+                + report.Totals.PossibleBytes
+                + report.Totals.SharedBytes
+                + report.Totals.UnattributedBytes);
+
+        // Unattributed is exactly the UNKNOWN bucket, and the list matches the total.
+        Assert.Equal(
+            scan.Items.Where(i => i.Classification == Classification.Unknown).Sum(i => i.SizeBytes),
+            report.Totals.UnattributedBytes);
+        Assert.Equal(report.Totals.UnattributedBytes, report.Unattributed.Sum(u => u.SizeBytes));
+        Assert.All(report.Unattributed, u => Assert.NotEmpty(u.Path));
+
+        // Each item is claimed by exactly one bucket, and an UNKNOWN location never
+        // publishes an accepted owner.
+        foreach (var item in scan.Items)
+        {
+            var buckets = new[]
+            {
+                item.Classification.IsConfident(),
+                item.Classification.IsUncertain(),
+                item.Classification is Classification.Shared or Classification.Ambiguous,
+                item.Classification == Classification.Unknown,
+            };
+
+            Assert.Equal(1, buckets.Count(b => b));
+
+            if (item.Classification == Classification.Unknown)
+            {
+                Assert.Empty(item.AcceptedOwners);
+            }
+        }
+
+        // The fixture produces CONFIRMED, MEDIUM and UNKNOWN locations, so the
+        // partition is asserted against real content rather than vacuously.
+        Assert.Contains(scan.Items, i => i.Classification.IsConfident());
+        Assert.Contains(scan.Items, i => i.Classification.IsUncertain());
+        Assert.Contains(scan.Items, i => i.Classification == Classification.Unknown);
+    }
+
+    [Fact]
+    public void ProvenanceEvidence_NeverChangesTheMeasuredBytes()
+    {
+        using var tree = new TempTree();
+        tree.File(@"Widget One\WidgetOne.exe", 4000);
+        tree.File(@"Widget One\data\blob.bin", 6000);
+
+        var app = Fixtures.App("Widget One", "Widgetco");
+
+        var plain = RunScan(tree, [app]);
+
+        var directory = Path.Combine(tree.Root, "Widget One");
+        var provenance = new ProvenanceIndex(
+        [
+            new ProvenanceAnchor(
+                app.Id,
+                Path.Combine(directory, "WidgetOne.exe"),
+                TextNormalizer.NormalizePath(directory),
+                ProvenanceSource.AppPath,
+                ExecutableRole.MainApplication,
+                @"HKLM\Software\Microsoft\Windows\CurrentVersion\App Paths",
+                "App Paths registers this executable.")
+            {
+                IsIndependentlyLinked = true,
+            },
+        ]);
+        var anchored = RunScan(tree, [app], provenance: provenance);
+
+        // Provenance reclassifies bytes that were already measured; it never mints
+        // new ones, so the measured total and the exclusive ledger must agree.
+        Assert.Equal(plain.TotalMeasuredBytes, anchored.TotalMeasuredBytes);
+        Assert.Equal(
+            plain.Items.Sum(i => i.ExclusiveSizeBytes),
+            anchored.Items.Sum(i => i.ExclusiveSizeBytes));
+
+        // Whichever bucket the confidence moves the bytes into, the four published
+        // buckets still reconcile with the measured total.
+        Assert.Equal(plain.TotalMeasuredBytes, BucketSum(FootprintReport.Build(plain)));
+        Assert.Equal(anchored.TotalMeasuredBytes, BucketSum(FootprintReport.Build(anchored)));
+    }
+
+    [Fact]
+    public void RelatedApplications_ReceiveNoBytesInTheReport()
+    {
+        using var tree = new TempTree();
+        tree.File(@"Owner App\app.exe", 5000);
+        tree.File(@"Owner App\Recommendations\Other Product\content.bin", 3000);
+
+        var owner = Fixtures.App("Owner App", "Owner Software");
+        var other = Fixtures.App("Other Product", "Other Software");
+
+        var scan = RunScan(tree, [owner, other]);
+        var report = FootprintReport.Build(scan);
+
+        Assert.Equal(scan.TotalMeasuredBytes, scan.Items.Sum(i => i.ExclusiveSizeBytes));
+        Assert.Equal(scan.TotalMeasuredBytes, report.Totals.TotalMeasuredBytes);
+        Assert.Equal(scan.TotalMeasuredBytes, BucketSum(report));
+
+        // A RelatedTo assertion is an interpretation of the location, not a second
+        // claim on it, so the related application owns none of the measured bytes.
+        Assert.Equal(0, BytesOwnedBy(scan, other.Id));
+    }
+
+    [Fact]
     public void ParentAndChildInstallLocations_DoNotDoubleCount()
     {
         using var tree = new TempTree();
@@ -225,9 +359,49 @@ public class FilesystemScanningTests
         Assert.Equal(Classification.Confirmed, item.Classification);
     }
 
+    [Fact]
+    public void CoDeclaredInstallRoot_IsNotClosed_AndChildrenAreAttributedToTheirProducts()
+    {
+        // Two products from one vendor declare the vendor directory itself, which is
+        // exactly the shape that used to hand the whole namespace to one product.
+        // The scanner must descend and let each product's own directory decide.
+        using var tree = new TempTree();
+        tree.File(@"Adobe\Image Editor\editor.exe", 5000);
+        tree.File(@"Adobe\Sound Editor\sound.exe", 3000);
+
+        var editor = Fixtures.App("Image Editor", "Adobe Inc.", Path.Combine(tree.Root, "Adobe"));
+        var sound = Fixtures.App("Sound Editor", "Adobe Inc.", Path.Combine(tree.Root, "Adobe"));
+
+        var scan = RunScan(tree, [editor, sound]);
+
+        Assert.Equal(tree.MeasureWithSystemApis(), scan.TotalMeasuredBytes);
+        AssertNoOverlaps(scan);
+
+        // The shared root is never published as a confident single-product claim.
+        var root = Path.Combine(tree.Root, "Adobe");
+        Assert.DoesNotContain(
+            scan.Items,
+            i => i.Path.Equals(root, StringComparison.OrdinalIgnoreCase) && i.Classification.IsConfident());
+
+        // Each product's own directory below it is attributed to that product.
+        var editorItem = Assert.Single(
+            scan.Items,
+            i => i.Path.EndsWith("Image Editor", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(editorItem.AcceptedOwners, o => o.AppId == editor.Id);
+
+        var soundItem = Assert.Single(
+            scan.Items,
+            i => i.Path.EndsWith("Sound Editor", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(soundItem.AcceptedOwners, o => o.AppId == sound.Id);
+    }
+
     // ---- Helpers ----------------------------------------------------------
 
-    private static ScanResult RunScan(TempTree tree, IReadOnlyList<AppIdentity> apps, int maxDepth = 6)
+    private static ScanResult RunScan(
+        TempTree tree,
+        IReadOnlyList<AppIdentity> apps,
+        int maxDepth = 6,
+        ProvenanceIndex? provenance = null)
     {
         var options = new ScanOptions
         {
@@ -240,8 +414,21 @@ public class FilesystemScanningTests
             }],
         };
 
-        return new AppTraceScanner(apps, options).Scan(options.Roots!);
+        return new AppTraceScanner(apps, options, provenance: provenance).Scan(options.Roots!);
     }
+
+    /// <summary>The four mutually exclusive published byte buckets, summed.</summary>
+    private static long BucketSum(FootprintReport report)
+        => report.Totals.ConfidentBytes
+            + report.Totals.PossibleBytes
+            + report.Totals.SharedBytes
+            + report.Totals.UnattributedBytes;
+
+    /// <summary>Bytes for which the application is an accepted owner.</summary>
+    private static long BytesOwnedBy(ScanResult scan, string appId)
+        => scan.Items
+            .Where(i => i.AcceptedOwners.Any(o => o.AppId == appId))
+            .Sum(i => i.ExclusiveSizeBytes);
 
     /// <summary>Rewrites an app's install location so it points inside a fixture.</summary>
     private static AppIdentity Rebase(AppIdentity app, string root)

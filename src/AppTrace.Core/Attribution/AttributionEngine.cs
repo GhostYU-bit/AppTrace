@@ -256,13 +256,14 @@ public sealed class AttributionEngine
         CollectInheritedOwnershipEvidence(input, evidenceByApp);
         CollectProvenanceAnchorEvidence(input, evidenceByApp);
         CollectNameEvidence(input, evidenceByApp);
+        CollectDataRootBoundaryEvidence(input, evidenceByApp);
         CollectPublisherEvidence(input, evidenceByApp);
         CollectContextEvidence(input, evidenceByApp);
         CollectExecutableMetadataEvidence(input, evidenceByApp);
         AddBoundingEvidence(input, evidenceByApp);
 
         var candidates = BuildCandidates(evidenceByApp);
-        var (decided, established, reason) = DecideOwnership(candidates);
+        var (decided, established, reason) = DecideOwnership(candidates, ContainerBoundaryOf(input));
         var classification = ClassifyLocation(decided);
 
         // Relatedness is decided only after ownership, because a relationship is a
@@ -548,6 +549,67 @@ public sealed class AttributionEngine
     }
 
     /// <summary>
+    /// Records that a directory name is proposing an owner from a product-level
+    /// boundary under a known application-data root.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The question this answers.</b> A product's own data namespace -
+    /// <c>ProgramData\LGHUB</c>, <c>Roaming\LarkShell</c>,
+    /// <c>ProgramData\IObit\Driver Booster</c> - is where an application's data
+    /// begins, and that is the only place under a data root where a name may propose
+    /// an owner. Making the boundary explicit means the candidate-generation
+    /// decision is visible in the WHY output instead of being an artifact of how
+    /// deep the path happened to sit.</para>
+    /// <para><b>What it does not do.</b> It cannot propose an application on its own:
+    /// it runs only for applications the name detector already proposed at this
+    /// exact directory, and the record is <see cref="EvidenceKind.Structure"/> worth
+    /// nothing, so it cannot move a candidate up the ladder. A familiar-looking
+    /// folder under a data root is not an owner.</para>
+    /// <para>It is skipped entirely inside an established structure, so a product-like
+    /// name beneath <c>node_modules</c>, a package cache, a runtime or a logs
+    /// directory keeps its Task 05 refusal and gains nothing from sitting under
+    /// AppData or ProgramData.</para>
+    /// </remarks>
+    private void CollectDataRootBoundaryEvidence(
+        AttributionInput input,
+        Dictionary<string, List<Evidence>> evidenceByApp)
+    {
+        var boundary = PathSemantics.BoundaryUnderDataRoot(
+            input.Depth,
+            input.Category.IsApplicationData());
+
+        if (boundary == DataRootBoundary.None || IsStructurallySuppressed(input))
+        {
+            return;
+        }
+
+        var position = boundary == DataRootBoundary.Product
+            ? $"directly below the {input.Category.Label()} data root"
+            : $"one vendor level below the {input.Category.Label()} data root";
+
+        foreach (var (appId, records) in evidenceByApp.ToList())
+        {
+            if (!_appsById.TryGetValue(appId, out var app)
+                || !records.Any(e => e.Type is EvidenceType.ExactDirectoryNameMatch
+                    or EvidenceType.NormalizedNameMatch))
+            {
+                continue;
+            }
+
+            Add(
+                evidenceByApp,
+                app,
+                EvidenceType.DataRootProductBoundary,
+                EvidenceStrength.Weak,
+                EvidenceSource.PathHeuristic,
+                $"\"{input.DirectoryName}\" is a product-level boundary {position}, where an "
+                    + "application's own data namespace may begin; the name can propose an owner "
+                    + "here, but does not prove one.",
+                true);
+        }
+    }
+
+    /// <summary>
     /// True when the directory's own name is allowed to identify a product.
     /// </summary>
     /// <remarks>
@@ -632,34 +694,73 @@ public sealed class AttributionEngine
             return;
         }
 
-        foreach (var anchor in anchors)
+        // Several registration surfaces routinely name the same file: an App Paths
+        // entry plus a Start Menu shortcut plus a desktop shortcut all reach the
+        // same executable. Those are repeated observations of one fact, not
+        // independent proof, so they contribute once. Distinct physical targets -
+        // a main executable and a service, say - remain separate facts and are
+        // still each scored.
+        foreach (var target in anchors.GroupBy(a => (a.AppId, a.NormalizedPath)))
         {
-            if (!_appsById.TryGetValue(anchor.AppId, out var app))
+            if (!_appsById.TryGetValue(target.Key.AppId, out var app))
             {
                 continue;
             }
 
-            var roleNote = anchor.Role switch
+            var observed = target.ToArray();
+            var role = observed.Select(a => a.Role).Distinct().Count() == 1
+                ? observed[0].Role
+                : Discovery.ExecutableRole.Unknown;
+            var roleNote = role switch
             {
                 Discovery.ExecutableRole.MainApplication => string.Empty,
                 Discovery.ExecutableRole.Unknown => string.Empty,
-                _ => $" (the file is an {anchor.Role} rather than the product's own executable)",
+                _ => $" (the file is an {role} rather than the product's own executable)",
             };
 
-            var pathRelative = RelativeTo(input.NormalizedPath, anchor.NormalizedPath);
+            // A target only reaches the application through a DisplayIcon resource
+            // when every observation of it is one; a shortcut to an icon is still a
+            // resource, but a shortcut to a real executable is not.
+            var onlyDisplayIcons = observed.All(a => a.Source == Discovery.ProvenanceSource.DisplayIcon);
+            var pathRelative = RelativeTo(input.NormalizedPath, target.Key.NormalizedPath);
 
             Add(
                 evidenceByApp,
                 app,
-                anchor.Source == Discovery.ProvenanceSource.DisplayIcon
-                    ? EvidenceType.DisplayIconMatch
-                    : EvidenceType.ProvenanceAnchorMatch,
+                onlyDisplayIcons ? EvidenceType.DisplayIconMatch : EvidenceType.ProvenanceAnchorMatch,
                 EvidenceStrength.Strong,
                 EvidenceSource.Registry,
-                $"{DescribeSource(anchor.Source)} shows \"{app.DisplayName}\" reaching " +
-                $"\"{anchor.Path}\", {pathRelative} this directory{roleNote}.",
+                DescribeObservations(app, observed[0].Path, observed, pathRelative, roleNote),
                 true);
         }
+    }
+
+    /// <summary>
+    /// States one physical target and every registration surface that reached it, so
+    /// the WHY output keeps the full picture while the confidence contribution is
+    /// bounded to one record.
+    /// </summary>
+    private static string DescribeObservations(
+        AppIdentity app,
+        string path,
+        Discovery.ProvenanceAnchor[] observed,
+        string pathRelative,
+        string roleNote)
+    {
+        var surfaces = string.Join(
+            ", ",
+            observed
+                .GroupBy(a => a.Source)
+                .OrderBy(g => g.Key)
+                .Select(g => g.Count() > 1
+                    ? $"{DescribeSource(g.Key)} (x{g.Count()})"
+                    : DescribeSource(g.Key)));
+
+        var reach = observed.Length > 1
+            ? $"Windows shows \"{app.DisplayName}\" reaching \"{path}\" through {observed.Length} registration surfaces: {surfaces}"
+            : $"Windows shows \"{app.DisplayName}\" reaching \"{path}\" through {surfaces}";
+
+        return $"{reach}, {pathRelative} this directory{roleNote}.";
     }
 
     private static string RelativeTo(string directory, string anchoredPath)
@@ -1793,8 +1894,74 @@ public sealed class AttributionEngine
     private static bool MeetsOwnershipBar(CandidateOwner candidate)
         => ClassifyCandidate(candidate) is Classification.High or Classification.Confirmed;
 
+    /// <summary>
+    /// True when the candidate carries a contradiction that forbids the claim.
+    /// </summary>
+    /// <remarks>
+    /// Used by acceptance as well as by classification, so that "a decisive
+    /// contradiction cannot be outvoted" holds for both. A candidate that carries
+    /// one is never one of the owners AppTrace stands behind.
+    /// </remarks>
+    private static bool IsDecisivelyContradicted(CandidateOwner candidate)
+        => candidate.Contradicting.Any(e => e.Contradiction == ContradictionKind.Decisive);
+
+    /// <summary>
+    /// A directory that is a shared container rather than a product's own root.
+    /// </summary>
+    /// <remarks>
+    /// A container is a directory that several installed products name as their
+    /// install root, or that is named after a publisher several installed products
+    /// share. Neither shape says which product owns what is below it, so a
+    /// container is never established for a single product: the per-product
+    /// boundary lives further down, and the scan has to keep descending to find it.
+    /// </remarks>
+    private readonly record struct ContainerBoundary(
+        bool IsContainer,
+        IReadOnlySet<string> DeclaringAppIds,
+        string Kind)
+    {
+        public static ContainerBoundary None { get; } =
+            new(false, new HashSet<string>(StringComparer.Ordinal), string.Empty);
+    }
+
+    /// <summary>
+    /// Recognises the two generic container shapes: a co-declared install root and
+    /// a shared vendor namespace.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately name-independent for the co-declared case. Which products
+    /// declare a directory is a fact about the registry; that the directory happens
+    /// to be called "Adobe" or "Tencent" is not what makes it shared, and encoding
+    /// vendor names would be the product-specific rule this task forbids.
+    /// </remarks>
+    private ContainerBoundary ContainerBoundaryOf(AttributionInput input)
+    {
+        var declaring = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var app in _apps)
+        {
+            if (app.NormalizedInstallLocation is { Length: > 0 } install
+                && string.Equals(install, input.NormalizedPath, StringComparison.Ordinal))
+            {
+                declaring.Add(app.Id);
+            }
+        }
+
+        if (declaring.Count >= 2)
+        {
+            return new ContainerBoundary(true, declaring, "co-declared install root");
+        }
+
+        if (_vendorNamespaces.Contains(TextNormalizer.Fold(input.DirectoryName)))
+        {
+            return new ContainerBoundary(true, declaring, "vendor namespace");
+        }
+
+        return ContainerBoundary.None;
+    }
+
     private (List<CandidateOwner> Candidates, bool Established, string Reason) DecideOwnership(
-        List<CandidateOwner> candidates)
+        List<CandidateOwner> candidates,
+        ContainerBoundary container)
     {
         var decided = new List<CandidateOwner>(candidates.Count);
         if (candidates.Count > 0)
@@ -1816,10 +1983,25 @@ public sealed class AttributionEngine
                 var meetsBar = MeetsOwnershipBar(candidate)
                     || (!anythingMeetsStrongBar && candidate.Score >= NamespaceEvidenceBar);
 
+                // At a container boundary, every product that declared this exact
+                // directory is an owner of the container, whatever amount of
+                // secondary evidence has accumulated for one of them. Without this,
+                // a product with many registration records drifts outside the tie
+                // window and is published as the sole owner of a shared root.
+                var declaredThisRoot = container.IsContainer
+                    && container.DeclaringAppIds.Contains(candidate.AppId);
+
+                // A decisive contradiction is documented as a gate that no amount
+                // of weak support may outvote, and acceptance must honour the same
+                // gate: otherwise a candidate can be published as an accepted
+                // owner while its own classification is UNKNOWN. That state is
+                // incoherent for a reader, and it was the reason a location could
+                // be reported as unattributed in one view and as owned in another.
                 var accepted = candidate.Score > 0
                     && hasSupportingEvidence
-                    && meetsBar
-                    && best - candidate.Score <= TieScoreWindow;
+                    && (meetsBar || declaredThisRoot)
+                    && !IsDecisivelyContradicted(candidate)
+                    && (best - candidate.Score <= TieScoreWindow || declaredThisRoot);
 
                 decided.Add(candidate with
                 {
@@ -1833,6 +2015,17 @@ public sealed class AttributionEngine
         if (acceptedOwners.Count == 0)
         {
             return (decided, false, "No application-specific evidence was found; descending to look for a tighter ownership boundary.");
+        }
+
+        // A shared container is never established, so the scanner keeps descending
+        // to the per-product boundaries underneath it. Establishment would let one
+        // arbitrary winner absorb the whole namespace on accumulated secondary
+        // evidence, which is the failure this rule exists to prevent.
+        if (container.IsContainer)
+        {
+            return (decided, false,
+                $"Directory is a {container.Kind} shared by {acceptedOwners.Count} installed application(s); " +
+                "descending to find the per-product boundaries.");
         }
 
         if (acceptedOwners.Count == 1)

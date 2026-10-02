@@ -108,6 +108,22 @@ public enum EvidenceType
     /// <summary>Path sits in a well-known per-application data location.</summary>
     KnownApplicationPath,
 
+    /// <summary>
+    /// The directory is a product-level boundary directly under a known
+    /// application-data root (ProgramData, LocalAppData, Roaming or LocalLow), and
+    /// its name specifically identifies the application. Task 07.6.
+    /// </summary>
+    /// <remarks>
+    /// <para>What it proves: this is where an application's own data namespace
+    /// begins, rather than a component of something else.</para>
+    /// <para>What it does not prove: ownership. It is a
+    /// <see cref="EvidenceKind.Structure"/> record worth nothing on its own, because
+    /// a familiar-looking folder under a data root is not an owner. It makes the
+    /// candidate-generation decision explicit and auditable; the identity and
+    /// provenance records are what carry a claim.</para>
+    /// </remarks>
+    DataRootProductBoundary,
+
     /// <summary>Path sits under a vendor namespace that is typical for this publisher.</summary>
     KnownPublisherNamespace,
 

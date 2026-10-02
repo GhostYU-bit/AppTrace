@@ -231,6 +231,18 @@ the logic — which is exactly the property that makes them useful. A live scan 
 "what does AppTrace find on this machine?", where provenance genuinely adds owners.
 Both numbers are reported because neither alone is the whole picture.
 
+### Task 07.5 field evaluation
+
+A read-only full-machine evaluation carried out between Task 07 and Task 07.6 changed
+no code and is **not** a baseline in the table above, because it was a live scan rather
+than a fixture run. Its nine findings — uneven install-versus-data-root attribution,
+missing candidate generation as the dominant UNKNOWN cause, no near-threshold or
+semantic-suppression misses, the vendor-root takeover defect, correlated-provenance
+amplification, the reporting reconciliation defect, the display-name corruption, and
+the shared storefront root — are recorded in
+[ATTRIBUTION_ENGINE_V2.md](ATTRIBUTION_ENGINE_V2.md#task-075-findings--real-machine-field-evaluation)
+together with the Task 07.6 corrections they motivated.
+
 ---
 
 ## What this harness does not do

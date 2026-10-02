@@ -1928,3 +1928,129 @@ manifests, no USN, ETW or runtime observation, no orphan detection, no GUI, no g
 database, no cloud or telemetry, and **no product-specific alias or path database**.
 No third-party runtime dependency was added: shortcuts are resolved through the
 Windows shell's own COM interface, which was verified before being adopted.
+
+## Task 07.5 findings — real-machine field evaluation
+
+A read-only evaluation of one complete scan (about 259 GB measured, 125 installed
+applications). It changed no production code and produced no commit. Paths below are
+generalized; no raw machine scan or personal identifier is recorded here.
+
+1. **Install roots are substantially better understood than data roots.** Attribution
+   by storage category was uneven in a way that is about *where*, not about *how
+   confident*: `Program Files (x86)` 91.7%, `Program Files` 72.9%, `LocalAppData`
+   59.5%, `RoamingAppData` 5.1%, `ProgramData` 0.3%, `LocalLow` 0.0% of bytes
+   attributed.
+2. **The largest UNKNOWNs are dominated by missing candidate generation.** Of the 31
+   largest unattributed boundaries (87.7 GB, 59.3% of all unattributed bytes), 21
+   produced *zero* candidates. Only 20 of 31 were human-obvious ownership.
+3. **No sampled large UNKNOWN was caused by near-threshold calibration.** No boundary
+   narrowly missed a score or confidence threshold, so tuning HIGH/MEDIUM/specificity
+   was explicitly ruled out as the next step.
+4. **No sampled large UNKNOWN was caused by Task 05 semantic suppression.** The
+   suppression gap was measured as 0.
+5. **Vendor-root takeover is a confirmed precision defect.** A directory that several
+   products declare as their install location was handed to one of them — the largest
+   observed case was a single shared vendor root of about 18.7 GB reported as a
+   MEDIUM single-product claim.
+6. **Correlated provenance can amplify a false boundary.** One physical executable
+   reached through an App Paths entry *and* several shortcuts produced several
+   independent-looking records, so an already-wrong boundary could out-score a
+   right one.
+7. **Reporting reconciliation defect.** The published top-level buckets summed to
+   about 385 MB less than the measured total, while the per-classification accounting
+   sum reconciled exactly. The measurement was right and the aggregation was wrong.
+8. **Display-name corruption is an open investigation.** One publisher's uninstall
+   entry carried a display name whose tail is not decodable text (see Task 07.6
+   below).
+9. **A shared storefront root is a future presentation issue.** A directory that
+   contains installed applications rather than one application's own files can be
+   attributed "correctly" and still mislead an application-centric report.
+
+## Task 07.6 as built — Ownership Boundary Hardening & Data-Root Candidate Generation
+
+Three corrections, in precision-first order, under the invariant *recover missing
+candidates without increasing confidently wrong ownership*.
+
+### A. Co-declared and vendor install roots are containers
+
+`AttributionEngine.ContainerBoundaryOf` recognises two generic shapes, both
+name-independent:
+
+- **co-declared install root** — two or more installed products register *this exact
+  directory* as their install location;
+- **vendor namespace** — the directory is a single word equal to a publisher name
+  carried by two or more installed applications.
+
+At either shape no single product may be established as the owner. Every product that
+declared the root is accepted as a co-owner regardless of how much secondary evidence
+one of them accumulated, and `OwnershipEstablished` is forced false with a stop reason
+that says the scan is descending to find the per-product boundaries. The scanner then
+resolves each `Vendor\Product` child on its own evidence. The rule is generic: which
+products declare a directory is a registry fact, and "Adobe" is not special.
+
+`DeclaredInstallLocation` itself is unchanged, so a genuine product root such as
+`%ProgramFiles%\Vendor\Product` is still CONFIRMED.
+
+### B. Correlated provenance is bounded, not discarded
+
+`CollectProvenanceAnchorEvidence` groups anchors by `(application, normalized physical
+target)` and emits exactly one scored record per physical target; the record's
+description still enumerates every registration surface that reached it, including how
+many times (`App Paths, shortcut (x3)`). Distinct binaries of one product — a main
+executable and a service — remain separate scored facts. Deduplication therefore uses
+stable properties only: application, normalized target path, role, registration.
+
+### C. Reporting buckets are a partition of the measured bytes
+
+`FootprintReport.Build` partitions the scan by `Classification` into four mutually
+exclusive buckets, so they sum to `TotalMeasuredBytes` exactly. The previous
+aggregation mixed two partitions: three buckets keyed on `Classification` and the
+unattributed bucket keyed on accepted-owner count, which left items that stayed
+UNKNOWN while carrying an accepted candidate in no bucket at all. Acceptance also now
+honours the decisive-contradiction gate, so a location can no longer be UNKNOWN in one
+view and owned in another.
+
+### D. Data-root product boundaries
+
+`PathSemantics.DataRootBoundary` (`None` / `Product` / `VendorProduct`) names where a
+product's own data namespace may begin below a known application-data root
+(`ProgramData`, `LocalAppData`, `Roaming`, `LocalLow`), reusing the existing
+category abstraction rather than any absolute path. `CollectDataRootBoundaryEvidence`
+emits `EvidenceType.DataRootProductBoundary` for applications the name detector already
+proposed at such a boundary.
+
+The record is `EvidenceKind.Structure` worth **0**: it makes the candidate-generation
+decision explicit and auditable in WHY, but it cannot propose an application on its own
+and cannot move a candidate up the confidence ladder. It is skipped inside an
+established structure, so `node_modules`, a package cache, a runtime or a logs
+directory keeps its Task 05 refusal and gains nothing from sitting under AppData. The
+positional rule itself is unchanged — the boundary and the depth rule agree at depth 1
+and 2 — so this correction adds no recall that the existing ladder did not already
+permit; it removes the ambiguity about *why* a name was allowed to propose an owner.
+
+### Measured effect and what was deliberately not done
+
+The evaluation suite grew from 228 to 249 tests, covering co-declared roots, unequal
+correlated provenance, data-root boundaries in all four roots, vendor→product
+boundaries, the structural refusals above, and the accounting invariant. The seven Task
+05 generic-token false positives remain refused, and Task 06 `Owns`/`RelatedTo`
+semantics are unchanged, with `RelatedTo` and provenance proven to contribute zero
+measured bytes.
+
+No threshold was retuned, no new evidence source was added, and no product-specific
+rule or alias table exists. The largest real-machine UNKNOWNs that remain are dominated
+by *installed-identity* gaps (a data directory whose name does not correspond to any
+discovered installed identity), which per the Task 07.6 scope must stay UNKNOWN rather
+than be guessed; closing them needs new evidence sources, not a wider recall rule.
+
+### Display-name corruption: investigated, not fixed
+
+AppTrace reads `DisplayName` with `RegistryKey.GetValue` and uses the returned `string`
+unchanged; the only transformation is whitespace trimming, and the normalization pass
+only tokenizes. There is no byte-level decoding anywhere on that path, so AppTrace
+cannot corrupt a well-formed Unicode registry value. The observed name is a valid
+Unicode prefix followed by a tail that is exactly what raw bytes reinterpreted as
+UTF-16 code units produce, which points at the stored value rather than at the reader.
+Because the correction would be publisher-specific string repair rather than a generic
+decoding fix, it was deliberately left out of Task 07.6 and recorded here as an open
+display/identity cleanup item.

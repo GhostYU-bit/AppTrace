@@ -77,6 +77,13 @@ public static class EvidenceWeights
         // applications store data here, which is true of nearly every path
         // AppTrace inspects; it says nothing about which application owns it.
         EvidenceType.KnownApplicationPath => 0,
+
+        // The product-boundary record from Task 07.6 is worth nothing for the same
+        // reason: being at the right depth below a data root is where a candidate may
+        // be proposed, not proof that the candidate owns anything. It exists so the
+        // candidate-generation decision is explicit and auditable, and it must never
+        // be able to move a candidate up the ladder on its own.
+        EvidenceType.DataRootProductBoundary => 0,
         EvidenceType.ParentDirectoryMatch => 12,
         EvidenceType.ChildDirectoryMatch => 10,
         EvidenceType.PublisherMatch => 15,

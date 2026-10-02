@@ -94,8 +94,15 @@ public sealed class FootprintReport
 
         foreach (var item in scan.Items)
         {
-            var owners = item.AcceptedOwners;
-            if (owners.Count == 0)
+            // The published accounting buckets partition the scan by
+            // Classification: CONFIRMED/HIGH, MEDIUM/LOW, SHARED/AMBIGUOUS and
+            // UNKNOWN. Unattributed storage is therefore the UNKNOWN bucket, and
+            // nothing else. Partitioning it by accepted-owner count instead left
+            // every location that stayed UNKNOWN while carrying an accepted but
+            // ungraded candidate in no bucket at all — which is why the published
+            // totals summed to less than the measured bytes while the
+            // per-classification sums reconciled exactly.
+            if (item.Classification == Classification.Unknown)
             {
                 unattributed.Add(new UnattributedLocation
                 {
@@ -107,6 +114,7 @@ public sealed class FootprintReport
                 continue;
             }
 
+            var owners = item.AcceptedOwners;
             foreach (var owner in owners)
             {
                 if (!byApp.TryGetValue(owner.AppId, out var list))
@@ -156,12 +164,21 @@ public sealed class FootprintReport
                 // from the item list (one entry per byte) rather than by summing
                 // the per-application views, which would count a shared location
                 // once for every owner.
+                //
+                // The four buckets are a partition of Classification and must
+                // therefore sum to TotalMeasuredBytes exactly:
+                //   Confirmed | High          -> confident
+                //   Medium | Low              -> possible
+                //   Shared | Ambiguous        -> shared
+                //   Unknown                   -> unattributed
                 ConfidentBytes = scan.Items.Where(i => i.Classification.IsConfident()).Sum(i => i.SizeBytes),
                 PossibleBytes = scan.Items.Where(i => i.Classification.IsUncertain()).Sum(i => i.SizeBytes),
                 SharedBytes = scan.Items
                     .Where(i => i.Classification is Classification.Shared or Classification.Ambiguous)
                     .Sum(i => i.SizeBytes),
-                UnattributedBytes = unattributed.Sum(u => u.SizeBytes),
+                UnattributedBytes = scan.Items
+                    .Where(i => i.Classification == Classification.Unknown)
+                    .Sum(i => i.SizeBytes),
             },
         };
     }

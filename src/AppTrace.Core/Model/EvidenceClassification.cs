@@ -43,6 +43,13 @@ public static class EvidenceClassification
         // says only "applications store data here", which is true of almost every
         // path AppTrace inspects, so it must never raise ownership confidence.
         EvidenceType.KnownApplicationPath => EvidenceKind.Structure,
+
+        // A product-level boundary under a data root says where an application's own
+        // data namespace may begin. That is a statement about the location's shape,
+        // not about an owner: a folder named after a product under ProgramData is
+        // still only a proposal, and the identity and provenance records are what
+        // have to carry the claim.
+        EvidenceType.DataRootProductBoundary => EvidenceKind.Structure,
         EvidenceType.KnownPublisherNamespace => EvidenceKind.Structure,
         EvidenceType.ParentDirectoryMatch => EvidenceKind.Structure,
         EvidenceType.ChildDirectoryMatch => EvidenceKind.Structure,

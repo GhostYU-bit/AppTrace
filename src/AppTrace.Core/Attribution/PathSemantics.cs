@@ -111,6 +111,41 @@ public readonly record struct SegmentSemantics(
     bool SuppressedByStructure = false);
 
 /// <summary>
+/// Where a directory sits relative to a known application-data root.
+/// </summary>
+/// <remarks>
+/// <para>Task 07.6. A directory name may propose an installed application as a
+/// candidate owner only at a <em>product-level boundary</em> below a known
+/// application-data root, so a familiar-looking folder deep inside a cache or a
+/// runtime is never treated as an owner. This is the smallest concept that
+/// expresses that distinction; it is deliberately not a filesystem ontology.</para>
+/// <para>The boundary is positional: the data root, then optionally one vendor
+/// segment, then the product. Everything below the product is the product's own
+/// content and inherits ownership through the ancestor assertion rather than
+/// through a name of its own.</para>
+/// </remarks>
+public enum DataRootBoundary
+{
+    /// <summary>The directory is not a product-level boundary under a data root.</summary>
+    None = 0,
+
+    /// <summary>
+    /// The first meaningful directory below the data root, such as
+    /// <c>ProgramData\LGHUB</c> or <c>Roaming\LarkShell</c>. This is where a
+    /// product's own data namespace may begin.
+    /// </summary>
+    Product,
+
+    /// <summary>
+    /// A product directory one level below a vendor directory, such as
+    /// <c>ProgramData\IObit\Driver Booster</c> or
+    /// <c>Local\Blackmagic Design\DaVinci Resolve</c>. The vendor segment scopes the
+    /// candidate; the product segment proposes it.
+    /// </summary>
+    VendorProduct,
+}
+
+/// <summary>
 /// Reads a path the way a person does: as a sequence of meaning-carrying segments
 /// rather than as a bag of directory names.
 /// </summary>
@@ -331,6 +366,41 @@ public static class PathSemantics
     /// </summary>
     public static StructureKind StructureForLeaf(IReadOnlyList<SegmentSemantics> semantics)
         => semantics.Count == 0 ? StructureKind.Unknown : semantics[^1].Kind;
+
+    /// <summary>
+    /// Where a directory sits relative to a known application-data root.
+    /// </summary>
+    /// <param name="depthBelowRoot">
+    /// The depth the scanner reports for this directory: 0 for the scan root itself
+    /// and 1 for a directory directly inside it. The scanner's depth is the
+    /// authority, exactly as it is for the positional rule, so the boundary holds
+    /// for paths that are not physically rooted in a scan root.
+    /// </param>
+    /// <param name="insideApplicationData">
+    /// True when the directory's location category is itself an application-data
+    /// root (ProgramData, LocalAppData, Roaming or LocalLow).
+    /// </param>
+    /// <remarks>
+    /// This only answers <em>may a name propose a candidate here</em>. It never
+    /// answers who owns the directory: structure may describe where a data namespace
+    /// begins, but only identity and provenance evidence may support a claim.
+    /// </remarks>
+    public static DataRootBoundary BoundaryUnderDataRoot(
+        int depthBelowRoot,
+        bool insideApplicationData)
+    {
+        if (!insideApplicationData)
+        {
+            return DataRootBoundary.None;
+        }
+
+        return depthBelowRoot switch
+        {
+            1 => DataRootBoundary.Product,
+            2 => DataRootBoundary.VendorProduct,
+            _ => DataRootBoundary.None,
+        };
+    }
 
     /// <summary>
     /// True when the path is a variable-size identifier rather than a name, such as
